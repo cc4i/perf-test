@@ -1,0 +1,20 @@
+apiVersion: perftest.com.google.gtools/v1
+kind: PtTask
+metadata:
+  labels:
+    app.kubernetes.io/name: pttask
+    app.kubernetes.io/instance: pttask-sample
+    app.kubernetes.io/part-of: pt-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: pt-operator
+  name: pttask-sample
+spec:
+  execution:
+    - executor: locust
+      concurrency: 10
+      hold-for: 5m
+      scenario: test-example
+  scenarios:
+    test-example:
+      default-address: http://blazedemo.com
+      script: locustfile.py

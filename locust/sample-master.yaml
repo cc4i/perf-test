@@ -1,0 +1,79 @@
+
+
+apiVersion: v1
+kind: Pod 
+metadata:
+  name: locust-master
+  labels:
+    app: locust-master
+spec:
+  terminationGracePeriodSeconds: 30
+  restartPolicy: Never
+  initContainers:
+    - name: taurus-init
+      image: busybox:1.28
+      command:
+      - sh
+      - -c
+      - |
+        cat <<EOF >>/taurus-configs/taurus.yaml
+        execution:
+        - executor: locust
+          concurrency: 100
+          ramp-up: 10s
+          hold-for: 5m
+          master: True
+          workers: 2
+          scenario: example
+        scenarios:
+          example:
+            default-address: http://blazedemo.com
+            script: locustfile.py
+            
+      volumeMounts:
+        - mountPath: /taurus-configs
+          name: taurus-config
+  containers:
+  - name: locust-master
+    image:  asia-docker.pkg.dev/play-api-service/test-images/taurus-base
+    imagePullPolicy: Always
+    # command:
+    # - sh
+    # - -c 
+    # - |
+    #  while sleep 1
+    #  do
+    #   echo $?
+    #  done
+    ports:
+      - name: tcp
+        containerPort: 5557
+    resources:
+      requests: 
+        cpu: 500m
+        memory: 1024Mi
+    volumeMounts:
+      - mountPath: /taurus-configs
+        name: taurus-config
+      - mountPath: /taurus-logs
+        name: bzt-pvc
+  volumes:
+    - name: taurus-config
+      emptyDir: {}
+    - name: bzt-pvc
+      persistentVolumeClaim:
+       claimName: bzt-filestore-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: locust-master
+spec: 
+  type: ClusterIP
+  selector:
+    app: locust-master
+  ports:
+  - name: tcp
+    port: 5557
+    targetPort: 5557

@@ -1,0 +1,11 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: bzt-filestore-pvc
+spec:
+  accessModes:
+  - ReadWriteMany
+  storageClassName: bzt-filestore-sc
+  resources:
+    requests:
+      storage: 2.5Ti
