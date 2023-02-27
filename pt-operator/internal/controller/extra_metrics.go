@@ -41,22 +41,30 @@ type LocustLdjsonStats struct {
 
 // Local memory data for metrics
 type PtTaskWorkerMetrics struct {
-	//Totoal user/concurrency ::Guage
-	TotalUser int
-	//Totoal RPS ::Guage
+	// Totoal users/concurrency ::Guage
+	TotalUsers int
+	// Totoal RPS ::Guage
 	TotalReqsPerSec int
-	//Total errors occured :: Counter
+	// Total errors occured :: Counter
 	TotalErrors int
+	// Total master ::Guage
+	TotalMasters int
+	// The status of master node ::GuageVec
+	MastersStatus map[string]string
+	// Total worker ::Guage
+	TotalWorkers int
+	// The status of worker ndoe ::GuageVec
+	WorkersStatus map[string]string
 
 	// Average response time per endpoint [endpoint -> response time] :: GuageVec
 	AvgResponseTimes map[string]float64
 }
 
 var (
-	ptTaskMetrics   = make(map[string]*PtTaskWorkerMetrics)
-	pttaskTotalUser = prometheus.NewGauge(
+	ptTaskMetrics    = make(map[string]*PtTaskWorkerMetrics)
+	pttaskTotalUsers = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "gtools_perftest_pttask_total_user",
+			Name: "gtools_perftest_pttask_total_users",
 			Help: "Number of total users for a PT task",
 		},
 	)
@@ -66,6 +74,44 @@ var (
 			Help: "Number of total RPS",
 		},
 	)
+	pttaskTotalErrors = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "gtools_perftest_pttask_total_errors",
+			Help: "Number of total errors",
+		},
+	)
+
+	pttaskTotalMasters = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "gtools_perftest_pttask_total_masters",
+			Help: "Number of master node",
+		},
+	)
+	pttaskMastersStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "gtools_perftest_pttask_master_status",
+			Help: "The status of master node",
+		},
+		[]string{
+			"name", // name of master node
+		},
+	)
+	pttaskTotalWorkers = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "gtools_perftest_pttask_total_workers",
+			Help: "Number of worker node",
+		},
+	)
+	pttaskWorkersStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "gtools_perftest_pttask_worker_status",
+			Help: "The status of worker node",
+		},
+		[]string{
+			"name", // name of worker node
+		},
+	)
+
 	pttaskAvgResponseTimes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_avg_response_time",
@@ -102,18 +148,18 @@ func updateReponseTimes(llj LocustLdjson) {
 			}
 		}
 
-		pttaskAvgResponseTimes.WithLabelValues("stat.Name").Set(avg)
+		pttaskAvgResponseTimes.WithLabelValues(stat.Name).Set(avg)
 	}
 
 }
 
 func updateTotals(llj LocustLdjson) {
 	if ptMetric, ok := ptTaskMetrics[llj.ClientId]; ok {
-		ptMetric.TotalUser = llj.UserCount
+		ptMetric.TotalUsers = llj.UserCount
 		ptMetric.TotalReqsPerSec = totalVals(llj.StatsTotal.NumReqsPerSec)
 	} else {
 		ptTaskMetrics[llj.ClientId] = &PtTaskWorkerMetrics{
-			TotalUser:       llj.UserCount,
+			TotalUsers:      llj.UserCount,
 			TotalReqsPerSec: totalVals(llj.StatsTotal.NumReqsPerSec),
 		}
 	}
@@ -121,11 +167,11 @@ func updateTotals(llj LocustLdjson) {
 	totalU := 0
 	totalRps := 0
 	for _, v := range ptTaskMetrics {
-		totalU = totalU + v.TotalUser
+		totalU = totalU + v.TotalUsers
 		totalRps = totalRps + v.TotalReqsPerSec
 
 	}
-	pttaskTotalUser.Set(float64(totalU))
+	pttaskTotalUsers.Set(float64(totalU))
 	pttaskTotalReqsPerSec.Set(float64(totalRps))
 
 }
@@ -138,7 +184,8 @@ func totalVals(m map[string]int) int {
 	return total
 }
 
-func tailLocustLog(file string) {
+// Monitoring testing result throung Locust log file, called locust-workers.ldjson by default
+func monitorLocustTesting(file string) {
 	l := log.Log
 	t, err := tail.TailFile(
 		file, tail.Config{Follow: true, ReOpen: true})
@@ -159,17 +206,28 @@ func tailLocustLog(file string) {
 			}
 		}
 	}
+}
+
+// Monitoring master node for Locust
+func monitorLocustMaster() {
+
+}
+
+// Monitoring worker node for Locust
+func monitorLocustWorker() {
 
 }
 
 func init() {
 	// Register custom metrics with the global prometheus registry
-	metrics.Registry.MustRegister(pttaskTotalUser, pttaskTotalReqsPerSec, pttaskAvgResponseTimes)
+	metrics.Registry.MustRegister(pttaskTotalUsers, pttaskTotalReqsPerSec, pttaskTotalErrors,
+		pttaskTotalMasters, pttaskMastersStatus, pttaskTotalWorkers, pttaskWorkersStatus,
+		pttaskAvgResponseTimes)
 
 	// go
 	// LIVE_LOG_FILE="/taurus-logs/artifacts/locust-workers.ldjson"
 	go func() {
-		tailLocustLog(os.Getenv("LIVE_LOG_FILE"))
+		monitorLocustTesting(os.Getenv("LIVE_LOG_FILE"))
 	}()
 
 }
