@@ -25,10 +25,6 @@ import (
 
 // PtTaskSpec defines the desired state of PtTask
 type PtTaskSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of PtTask. Edit pttask_types.go to remove/update
 	Execution []PtTaskSpecExecution         `json:"execution"`
 	Scenarios map[string]PtTaskSpecScenario `json:"scenarios"`
 }
@@ -50,8 +46,16 @@ type PtTaskSpecScenario struct {
 
 // PtTaskStatus defines the observed state of PtTask
 type PtTaskStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+
+	// Phases include:
+	// - "initial",
+	// - "privision_master",
+	// - "provision_worker",
+	// - "testing",
+	// - "achievng_logs",
+	// - "done"
+	Phases map[string]string `json:"phase"`
+	Id     string            `json:"id,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -1,0 +1,161 @@
+package helper
+
+import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+// Build a Pod as Locust Master as per PtTask
+func BuildMasterPod4Locust(img string, id string, scenario string) *corev1.Pod {
+	gsec := int64(30)
+	name := "locust-master-" + scenario
+	ns := "default"
+	labels := map[string]string{
+		"module":   "performance-testing",
+		"app":      "locust-master",
+		"scenario": scenario,
+	}
+
+	master := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+			Labels:    labels,
+		},
+		Spec: corev1.PodSpec{
+			TerminationGracePeriodSeconds: &gsec,
+			RestartPolicy:                 corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:            name,
+					Image:           img,
+					ImagePullPolicy: corev1.PullAlways,
+					Command: []string{
+						"/usr/local/bin/bzt",
+					},
+					//CMD ["/usr/local/bin/bzt", "/taurus-configs/taurus.yaml", "-o", "modules.console.disable=true", "-o", "settings.artifacts-dir=/taurus-logs/%Y-%m-%d_%H-%M-%S.%f"]
+					Args: []string{
+						"/taurus-configs/taurus.yaml",
+						"-o",
+						"modules.console.disable=true",
+						"-o",
+						"settings.artifacts-dir=/taurus-logs/" + id + "/" + scenario,
+					},
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "tcp",
+							ContainerPort: 5557,
+						},
+					},
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1000m"),
+							corev1.ResourceMemory: resource.MustParse("2048Mi"),
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "taurus-config",
+							MountPath: "/taurus-configs",
+						},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "bzt-pvc",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "bzt-filestore-pvc",
+						},
+					},
+				},
+			},
+		},
+	}
+	return &master
+}
+
+// svcType could be "ClusterIP" or "LoadBlancer". "LoadBlancer" is to expose endpoint publicly.
+func BuildMasterService4Locust(svcType corev1.ServiceType, scenario string) *corev1.Service {
+	name := "locust-master-" + scenario + "-svc"
+	ns := "default"
+
+	svc := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+		},
+		Spec: corev1.ServiceSpec{
+			Type: svcType,
+			Selector: map[string]string{
+				"app":      "locust-master",
+				"scenario": scenario,
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name: "tcp",
+					Port: 5557,
+					TargetPort: intstr.IntOrString{
+						IntVal: 5557,
+					},
+				},
+			},
+		},
+	}
+	return &svc
+}
+
+// Build a Pod as Locust Worker as per PtTask
+func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string, scenario string) *corev1.Pod {
+	gsec := int64(30)
+	name := "locust-worker-" + scenario
+	ns := "default"
+	labels := map[string]string{
+		"module":   "performance-testing",
+		"app":      "locust-worker",
+		"scenario": scenario,
+	}
+
+	worker := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+			Labels:    labels,
+		},
+		Spec: corev1.PodSpec{
+			TerminationGracePeriodSeconds: &gsec,
+			RestartPolicy:                 corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:  name,
+					Image: img,
+					Command: []string{
+						"locust",
+					},
+					Args: []string{
+						"--worker",
+						"--master-host",
+						masterHost,
+						"--master-port",
+						masterPort,
+						"--loglevel",
+						"DEBUG",
+						"--exit-code-on-error",
+						"0",
+					},
+					ImagePullPolicy: corev1.PullAlways,
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1000m"),
+							corev1.ResourceMemory: resource.MustParse("2048Mi"),
+						},
+					},
+				},
+			},
+		},
+	}
+	return &worker
+}

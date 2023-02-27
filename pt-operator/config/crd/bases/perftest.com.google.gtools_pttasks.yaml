@@ -36,8 +36,6 @@ spec:
             description: PtTaskSpec defines the desired state of PtTask
             properties:
               execution:
-                description: Foo is an example field of PtTask. Edit pttask_types.go
-                  to remove/update
                 items:
                   properties:
                     concurrency:
@@ -82,6 +80,17 @@ spec:
             type: object
           status:
             description: PtTaskStatus defines the observed state of PtTask
+            properties:
+              id:
+                type: string
+              phase:
+                additionalProperties:
+                  type: string
+                description: 'Phases include: - "initial", - "privision_master", -
+                  "provision_worker", - "testing", - "achievng_logs", - "done"'
+                type: object
+            required:
+            - phase
             type: object
         type: object
     served: true

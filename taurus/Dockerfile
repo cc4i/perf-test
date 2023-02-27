@@ -9,4 +9,4 @@ COPY scripts /bzt-configs
 
 # Setup workdir
 WORKDIR /bzt-configs
-ENTRYPOINT ["/usr/local/bin/bzt", "/taurus-configs/taurus.yaml", "-o", "modules.console.disable=true", "-o", "settings.artifacts-dir=/taurus-logs/%Y-%m-%d_%H-%M-%S.%f"]
+CMD ["/usr/local/bin/bzt", "/taurus-configs/taurus.yaml", "-o", "modules.console.disable=true", "-o", "settings.artifacts-dir=/taurus-logs/%Y-%m-%d_%H-%M-%S.%f"]
