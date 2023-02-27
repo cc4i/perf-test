@@ -54,20 +54,6 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-// Build a Pod as Locust Master as per PtTask
-func buildLocustMaster() {
-
-}
-
-// Build a Pod as Locust Worker as per PtTask
-func buildLocusterWorker() {
-
-}
-
-func liveMetrics() {
-
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *PtTaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
