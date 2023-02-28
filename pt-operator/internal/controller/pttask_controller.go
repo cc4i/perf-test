@@ -18,9 +18,11 @@ package controller
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"sigs.k8s.io/yaml"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,7 +30,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	perftestv1 "com.google.gtools/pt-operator/api/v1"
 	"com.google.gtools/pt-operator/internal/helper"
@@ -60,22 +61,48 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		l.Info("unable to fetch PtTask")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	} else {
-		id := uuid.New()
-		pTask.Status.Id = id.String()
-		r.Update(ctx, &pTask)
-		if len(pTask.Status.Phases) == 0 {
-			for _, x := range pTask.Spec.Execution {
-				switch x.Executor {
-				case "locust":
-					l.Info("Provisioning for Locust")
-					do4Locust(ctx, r, req, &pTask, x.Scenario, x.Workers)
-				case "jmeter":
-					l.Info("Provisioning for JMeter")
-				default:
-					l.Info("The testing framework wasn't supported yet", "framework", pTask.Spec.Execution[0].Executor)
-				}
-			}
 
+		if pTask.Status.Id == "" {
+			id := uuid.New()
+			pTask.Status.Id = id.String()
+			pTask.Status.Phases = make(map[string]string)
+			l.Info("Set Id to ptTask", "Id", pTask.Status.Id)
+			if err = r.Client.Status().Update(context.Background(), &pTask); err != nil {
+				l.Info("failed to update status of ptTask")
+				return ctrl.Result{}, err
+			}
+		}
+
+		for _, x := range pTask.Spec.Execution {
+
+			l.Info("Process ptTask in progress")
+			switch x.Executor {
+			case "locust":
+				l.Info("Provisioning for Locust")
+				trsConf, _ := yaml.Marshal(pTask.Spec)
+				// l.Info("BO:")
+				l.Info(string(trsConf))
+				// l.Info("EO:")
+				if ph, err := do4Locust(ctx, r, req, &pTask, x.Scenario, x.Workers); err != nil {
+					l.Error(err, "failed to provision/execute Locust", "phase", ph)
+					return ctrl.Result{}, err
+				} else {
+					if err := r.Get(ctx, req.NamespacedName, &pTask); err != nil {
+						l.Info("unable to fetch PtTask")
+						return ctrl.Result{}, client.IgnoreNotFound(err)
+					}
+					pTask.Status.Phases[x.Scenario] = ph
+					if err = r.Client.Status().Update(context.Background(), &pTask); err != nil {
+						l.Error(err, "failed to update status of ptTask", "phase", ph)
+						return ctrl.Result{}, err
+					}
+				}
+
+			case "jmeter":
+				l.Info("Provisioning for JMeter")
+			default:
+				l.Info("The testing framework wasn't supported yet", "framework", pTask.Spec.Execution[0].Executor)
+			}
 		}
 
 	}
@@ -83,49 +110,90 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, pTask *perftestv1.PtTask, scenario string, workerNum int) (ctrl.Result, error) {
+// func convert2Text(pTask perftestv1.PtTask) string {
+// 	return ""
+// }
+
+func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, pTask *perftestv1.PtTask, scenario string, workerNum int) (string, error) {
 	l := log.FromContext(ctx)
+	masterImage := "asia-docker.pkg.dev/play-api-service/test-images/taurus-base"
+	workerImage := "asia-docker.pkg.dev/play-api-service/test-images/locust-worker"
 
 	// 1. Create Locust master Pod
-	pTask.Status.Phases[scenario] = "initial"
-	client.Update(ctx, pTask)
-	mp := helper.BuildMasterPod4Locust("", pTask.Status.Id, scenario)
-	if err := client.Create(ctx, mp); err != nil {
-		l.Error(err, "failed to create Pod for master node of Locust")
-		return ctrl.Result{}, err
-	}
+	phase := "initial"
+
 	// 2. Create Locust master service for Pod
-	pTask.Status.Phases[scenario] = "privision_master"
-	client.Update(ctx, pTask)
-	ms := helper.BuildMasterService4Locust(corev1.ServiceTypeClusterIP, scenario)
-	if err := client.Create(ctx, ms); err != nil {
-		l.Error(err, "failed to create Pod for master node of Locust")
-		return ctrl.Result{}, err
+	phase = "privision_master"
+	trsConf, _ := yaml.Marshal(pTask.Spec)
+	mp := helper.BuildMasterPod4Locust(masterImage, pTask.Status.Id, scenario, string(trsConf))
+	mpNN := types.NamespacedName{
+		Name:      mp.Name,
+		Namespace: mp.Namespace,
+	}
+	var xMp = corev1.Pod{}
+	if err := client.Get(ctx, mpNN, &xMp); err != nil {
+		if err := client.Create(ctx, mp); err != nil {
+			l.Error(err, "failed to create Pod for master node of Locust")
+			return phase, err
+		}
+	} else {
+		l.Info("master node was existed", "name", mp.Name, "namespace", mp.Namespace)
+
 	}
 
-	master := reconcile.Request{
-		NamespacedName: types.NamespacedName{
-			Namespace: mp.Name,
-			Name:      mp.Namespace,
-		},
+	ms := helper.BuildMasterService4Locust(corev1.ServiceTypeClusterIP, scenario)
+	msNN := types.NamespacedName{
+		Name:      ms.Name,
+		Namespace: ms.Namespace,
+	}
+	var xMs = corev1.Service{}
+	if err := client.Get(ctx, msNN, &xMs); err != nil {
+		if err := client.Create(ctx, ms); err != nil {
+			l.Error(err, "failed to create Service for master node of Locust")
+			return phase, err
+		}
+	} else {
+		l.Info("master svc was existed", "name", xMs.Name, "namespace", xMs.Namespace)
 	}
 
 	// 4. Create Locust worker Pods as demand if locust master is ready
-	for !checkLocustMaster(ctx, client, req, master) {
-		time.Sleep(1 * time.Second)
-	}
-	pTask.Status.Phases[scenario] = "privision_worker"
-	client.Update(ctx, pTask)
-	// TODO: 1. svc ip 2.loop to creat multiple workers
-	for i := 0; i < workerNum; i++ {
-		if err := client.Create(ctx, helper.BuildLocusterWorker4Locust("", "", "", scenario)); err != nil {
-			l.Error(err, "failed to create Pod for worker node of Locust", "worker", "")
+	svcHost := ""
+	svcPort := ""
+	isReady := false
+	for {
+		isReady, svcHost, svcPort = checkLocustMaster(ctx, client, req, mpNN, msNN)
+		if !isReady {
+			time.Sleep(5 * time.Second)
+		} else {
+			break
 		}
+	}
+	l.Info("master service for Locust is ready", "host", svcHost, "port", svcPort)
+
+	phase = "privision_worker"
+	// Creat multiple workers
+	for i := 1; i < workerNum+1; i++ {
+		wk := helper.BuildLocusterWorker4Locust(workerImage, svcHost, svcPort, scenario, strconv.Itoa(i))
+		var xWk = corev1.Pod{}
+		wkNN := types.NamespacedName{
+			Name:      wk.Name,
+			Namespace: wk.Namespace,
+		}
+		if err := client.Get(ctx, wkNN, &xWk); err != nil {
+			if err := client.Create(ctx, wk); err != nil {
+				l.Error(err, "failed to create Pod for worker node of Locust", "worker", wk.ObjectMeta.Name)
+				return phase, err
+			}
+		} else {
+			l.Info("worker node was existed", "name", wk.Name, "namespace", wk.Namespace)
+
+		}
+
 	}
 
 	// 5. Kick off monitoring and keep update along the way
 	// TODO
-	go MonitorLocustTesting(scenario, "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
+	// go MonitorLocustTesting(scenario, "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
 
 	// 6. Achieve testing logs/reports
 	// TODO
@@ -135,7 +203,7 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 
 	// 8. Singal to clean up all related resources except metadata store & GCS
 	// TODO
-	return ctrl.Result{}, nil
+	return phase, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -147,20 +215,30 @@ func (r *PtTaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // Checking status of master whether it should launch worker nodes
-func checkLocustMaster(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, master reconcile.Request) bool {
+func checkLocustMaster(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, masterNN types.NamespacedName, masterSNN types.NamespacedName) (bool, string, string) {
 	l := log.FromContext(ctx)
 
 	var masterPod corev1.Pod
-	if err := client.Get(ctx, master.NamespacedName, &masterPod); err != nil {
-		l.Error(err, "unable to fetch Pod for master node")
+	var masterSvc corev1.Service
+	if err := client.Get(ctx, masterNN, &masterPod); err != nil {
+		l.Error(err, "unable to fetch Pod for master node", "name", masterNN.Name, "namespace", masterNN.Namespace)
 	} else {
 		for _, cs := range masterPod.Status.ContainerStatuses {
 			if *cs.Started && cs.Ready {
-				// Provision workers
-				return true
+				if err := client.Get(ctx, masterSNN, &masterSvc); err != nil {
+					l.Error(err, "unable to fetch Service for master node", "name", masterSNN.Name, "namespace", masterSNN.Namespace)
+				} else {
+					if masterSvc.Spec.Type == corev1.ServiceTypeClusterIP {
+						return true, masterSvc.Spec.ClusterIP, strconv.Itoa(int(masterSvc.Spec.Ports[0].Port))
+					} else if masterSvc.Spec.Type == corev1.ServiceTypeLoadBalancer {
+						if masterSvc.Status.LoadBalancer.Ingress != nil {
+							return true, masterSvc.Status.LoadBalancer.Ingress[0].IP, strconv.Itoa(int(masterSvc.Spec.Ports[0].Port))
+						}
+					}
+				}
 			}
 		}
 	}
-	return false
+	return false, "", ""
 
 }

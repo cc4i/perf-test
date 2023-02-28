@@ -90,7 +90,7 @@ spec:
                   "provision_worker", - "testing", - "achievng_logs", - "done"'
                 type: object
             required:
-            - phase
+            - id
             type: object
         type: object
     served: true

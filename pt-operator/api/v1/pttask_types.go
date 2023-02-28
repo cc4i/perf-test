@@ -54,8 +54,8 @@ type PtTaskStatus struct {
 	// - "testing",
 	// - "achievng_logs",
 	// - "done"
-	Phases map[string]string `json:"phase"`
-	Id     string            `json:"id,omitempty"`
+	Phases map[string]string `json:"phase,omitempty"`
+	Id     string            `json:"id"`
 }
 
 //+kubebuilder:object:root=true

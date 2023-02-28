@@ -11,8 +11,11 @@ metadata:
 spec:
   execution:
     - executor: locust
-      concurrency: 10
+      concurrency: 100
+      ramp-up: 10s
       hold-for: 5m
+      master: "true"
+      workers: 2
       scenario: test-example
   scenarios:
     test-example:

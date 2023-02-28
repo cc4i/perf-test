@@ -245,7 +245,7 @@ func monitorLocustMaster(file string) {
 		// decode content line by line
 		for line := range t.Lines {
 			if strings.HasSuffix(line.Text, " at /bzt-configs") {
-
+				//TODO
 			}
 		}
 	}
@@ -254,7 +254,7 @@ func monitorLocustMaster(file string) {
 
 // Monitoring worker node for Locust
 func monitorLocustWorker() {
-
+	//TODO
 }
 
 func init() {

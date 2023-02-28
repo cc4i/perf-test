@@ -8,7 +8,7 @@ import (
 )
 
 // Build a Pod as Locust Master as per PtTask
-func BuildMasterPod4Locust(img string, id string, scenario string) *corev1.Pod {
+func BuildMasterPod4Locust(img string, id string, scenario string, trsConf string) *corev1.Pod {
 	gsec := int64(30)
 	name := "locust-master-" + scenario
 	ns := "default"
@@ -27,6 +27,23 @@ func BuildMasterPod4Locust(img string, id string, scenario string) *corev1.Pod {
 		Spec: corev1.PodSpec{
 			TerminationGracePeriodSeconds: &gsec,
 			RestartPolicy:                 corev1.RestartPolicyNever,
+			InitContainers: []corev1.Container{
+				{
+					Name:  "taurus-init",
+					Image: "asia-docker.pkg.dev/play-api-service/test-images/busybox:1.28",
+					Command: []string{
+						"sh",
+						"-c",
+						"cat <<EOF >>/taurus-configs/taurus.yaml\n" + trsConf,
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "taurus-config",
+							MountPath: "/taurus-configs",
+						},
+					},
+				},
+			},
 			Containers: []corev1.Container{
 				{
 					Name:            name,
@@ -64,6 +81,12 @@ func BuildMasterPod4Locust(img string, id string, scenario string) *corev1.Pod {
 				},
 			},
 			Volumes: []corev1.Volume{
+				{
+					Name: "taurus-config",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
 				{
 					Name: "bzt-pvc",
 					VolumeSource: corev1.VolumeSource{
@@ -109,9 +132,9 @@ func BuildMasterService4Locust(svcType corev1.ServiceType, scenario string) *cor
 }
 
 // Build a Pod as Locust Worker as per PtTask
-func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string, scenario string) *corev1.Pod {
+func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string, scenario string, workerId string) *corev1.Pod {
 	gsec := int64(30)
-	name := "locust-worker-" + scenario
+	name := "locust-worker-" + scenario + "-" + workerId
 	ns := "default"
 	labels := map[string]string{
 		"module":   "performance-testing",
