@@ -36,23 +36,63 @@ spec:
             description: PtTaskSpec defines the desired state of PtTask
             properties:
               execution:
+                description: Execution for different scenarios
                 items:
                   properties:
                     concurrency:
+                      description: The number of target concurrent virtual users
                       type: integer
                     executor:
+                      description: The number of target concurrent virtual users
                       type: string
                     hold-for:
+                      description: Time to hold target concurrency
                       type: string
                     iterations:
+                      description: Limit scenario iterations number
                       type: integer
                     master:
-                      type: string
+                      default: true
+                      description: Is master or not
+                      enum:
+                      - true
+                      - false
+                      type: boolean
                     ramp-up:
+                      description: Ramp-up time to reach target concurrency
                       type: string
                     scenario:
+                      description: The name of scenario that described in scenarios
+                        part
                       type: string
+                    traffic:
+                      additionalProperties:
+                        description: How traffic would be spread across GKE cluster,
+                        properties:
+                          gkeCA64:
+                            description: Base64 CA acertificate
+                            type: string
+                          gkeEndpoint:
+                            description: External endpoint for GKE
+                            type: string
+                          percent:
+                            description: 'The percentage for traffic: currency * precent/100'
+                            type: integer
+                          region:
+                            description: The region where GKE cluster is provisioned
+                            type: string
+                          saKey64:
+                            description: Base64 key for service account
+                            type: string
+                        required:
+                        - percent
+                        - region
+                        type: object
+                      description: 'Traffic definition: (region) -> (PtTaskTraffic)'
+                      type: object
                     workers:
+                      description: Numbers of workers, calculated if not specified
+                      minimum: 1
                       type: integer
                   required:
                   - concurrency
@@ -73,21 +113,32 @@ spec:
                   - default-address
                   - script
                   type: object
+                description: (scenario name) -> (PtTaskScenario)
                 type: object
+              type:
+                default: local
+                description: 'Task type: local/distributed'
+                enum:
+                - local
+                - distributed
+                type: string
             required:
             - execution
             - scenarios
+            - type
             type: object
           status:
             description: PtTaskStatus defines the observed state of PtTask
             properties:
               id:
+                description: Each PtTask has an unique Id
                 type: string
               phase:
                 additionalProperties:
                   type: string
-                description: 'Phases include: - "initial", - "privision_master", -
-                  "provision_worker", - "testing", - "achievng_logs", - "done"'
+                description: 'Phases included following status per testing scenario:
+                  - "privision_master", - "provision_worker", - "testing", - "achieving_logs",
+                  - "done"'
                 type: object
             required:
             - id

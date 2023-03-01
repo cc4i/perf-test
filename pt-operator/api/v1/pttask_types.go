@@ -25,37 +25,71 @@ import (
 
 // PtTaskSpec defines the desired state of PtTask
 type PtTaskSpec struct {
-	Execution []PtTaskSpecExecution         `json:"execution"`
-	Scenarios map[string]PtTaskSpecScenario `json:"scenarios"`
+	// Task type: local/distributed
+	//+kubebuilder:default:=local
+	//+kubebuilder:validation:Enum:=local;distributed
+	Type string `json:"type"`
+
+	// Execution for different scenarios
+	Execution []PtTaskExecution `json:"execution"`
+	// (scenario name) -> (PtTaskScenario)
+	Scenarios map[string]PtTaskScenario `json:"scenarios"`
 }
 
-type PtTaskSpecExecution struct {
-	Executor    string `json:"executor"`
-	Concurrency int    `json:"concurrency"`
-	HoldFor     string `json:"hold-for"`
-	RampUp      string `json:"ramp-up"`
-	Iterations  int    `json:"iterations,omitempty"`
-	Scenario    string `json:"scenario"`
-	Master      string `json:"master,omitempty"`
-	Workers     int    `json:"workers,omitempty"`
+type PtTaskExecution struct {
+	// The number of target concurrent virtual users
+	Executor string `json:"executor"`
+	// The number of target concurrent virtual users
+	Concurrency int `json:"concurrency"`
+	// Time to hold target concurrency
+	HoldFor string `json:"hold-for"`
+	// Ramp-up time to reach target concurrency
+	RampUp string `json:"ramp-up"`
+	// Limit scenario iterations number
+	Iterations int `json:"iterations,omitempty"`
+	// The name of scenario that described in scenarios part
+	Scenario string `json:"scenario"`
+	// Is master or not
+	//+kubebuilder:default:=true
+	//+kubebuilder:validation:Enum:=true;false
+	Master bool `json:"master,omitempty"`
+	// Numbers of workers, calculated if not specified
+	//+kubebuilder:validation:Minimum=1
+	Workers int `json:"workers,omitempty"`
+	// Traffic definition: (region) -> (PtTaskTraffic)
+	Traffic map[string]PtTaskTraffic `json:"traffic,omitempty"`
 }
-type PtTaskSpecScenario struct {
+type PtTaskScenario struct {
 	DefaultAddress string `json:"default-address"`
 	Script         string `json:"script"`
+}
+
+// How traffic would be spread across GKE cluster,
+type PtTaskTraffic struct {
+	// Base64 key for service account
+	SAKey64 string `json:"saKey64,omitempty"`
+	// Base64 CA acertificate
+	GKECA64 string `json:"gkeCA64,omitempty"`
+	// External endpoint for GKE
+	GKEEndpoint string `json:"gkeEndpoint,omitempty"`
+	// The region where GKE cluster is provisioned
+	Region string `json:"region"`
+	// The percentage for traffic: currency * precent/100
+	Percent int `json:"percent"`
 }
 
 // PtTaskStatus defines the observed state of PtTask
 type PtTaskStatus struct {
 
-	// Phases include:
-	// - "initial",
+	// Phases included following status per testing scenario:
 	// - "privision_master",
 	// - "provision_worker",
 	// - "testing",
-	// - "achievng_logs",
+	// - "achieving_logs",
 	// - "done"
 	Phases map[string]string `json:"phase,omitempty"`
-	Id     string            `json:"id"`
+	// Each PtTask has an unique Id
+	Id string `json:"id"`
 }
 
 //+kubebuilder:object:root=true

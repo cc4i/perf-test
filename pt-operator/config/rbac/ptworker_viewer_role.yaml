@@ -1,0 +1,27 @@
+# permissions for end users to view ptworkers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: ptworker-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: pt-operator
+    app.kubernetes.io/part-of: pt-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: ptworker-viewer-role
+rules:
+- apiGroups:
+  - perftest.com.google.gtools
+  resources:
+  - ptworkers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - perftest.com.google.gtools
+  resources:
+  - ptworkers/status
+  verbs:
+  - get

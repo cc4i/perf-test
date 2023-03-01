@@ -9,13 +9,14 @@ metadata:
     app.kubernetes.io/created-by: pt-operator
   name: pttask-sample
 spec:
+  type: local
   execution:
     - executor: locust
       concurrency: 100
       ramp-up: 10s
       hold-for: 5m
-      master: "true"
-      workers: 2
+      master: True
+      workers: 1
       scenario: test-example
   scenarios:
     test-example:

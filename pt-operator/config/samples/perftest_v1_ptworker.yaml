@@ -1,0 +1,12 @@
+apiVersion: perftest.com.google.gtools/v1
+kind: PtWorker
+metadata:
+  labels:
+    app.kubernetes.io/name: ptworker
+    app.kubernetes.io/instance: ptworker-sample
+    app.kubernetes.io/part-of: pt-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: pt-operator
+  name: ptworker-sample
+spec:
+  # TODO(user): Add fields here

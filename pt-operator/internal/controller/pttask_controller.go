@@ -47,25 +47,21 @@ type PtTaskReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the PtTask object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
+
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
 func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
+
+	// Process for PtTask
 	var pTask perftestv1.PtTask
 	if err := r.Get(ctx, req.NamespacedName, &pTask); err != nil {
 		l.Info("unable to fetch PtTask")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	} else {
-
 		if pTask.Status.Id == "" {
 			id := uuid.New()
 			pTask.Status.Id = id.String()
-			pTask.Status.Phases = make(map[string]string)
 			l.Info("Set Id to ptTask", "Id", pTask.Status.Id)
 			if err = r.Client.Status().Update(context.Background(), &pTask); err != nil {
 				l.Info("failed to update status of ptTask")
@@ -73,46 +69,62 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 		}
 
-		for _, x := range pTask.Spec.Execution {
+		for _, xe := range pTask.Spec.Execution {
 
 			l.Info("Process ptTask in progress")
-			switch x.Executor {
+			switch xe.Executor {
 			case "locust":
 				l.Info("Provisioning for Locust")
 				trsConf, _ := yaml.Marshal(pTask.Spec)
 				// l.Info("BO:")
 				l.Info(string(trsConf))
 				// l.Info("EO:")
-				if ph, err := do4Locust(ctx, r, req, &pTask, x.Scenario, x.Workers); err != nil {
+				if ph, err := do4Locust(ctx, r, req, &pTask, xe.Scenario, xe.Workers); err != nil {
 					l.Error(err, "failed to provision/execute Locust", "phase", ph)
+					updatePhase(ctx, r, xe.Scenario, req.NamespacedName, ph)
 					return ctrl.Result{}, err
 				} else {
-					if err := r.Get(ctx, req.NamespacedName, &pTask); err != nil {
-						l.Info("unable to fetch PtTask")
-						return ctrl.Result{}, client.IgnoreNotFound(err)
-					}
-					pTask.Status.Phases[x.Scenario] = ph
-					if err = r.Client.Status().Update(context.Background(), &pTask); err != nil {
-						l.Error(err, "failed to update status of ptTask", "phase", ph)
-						return ctrl.Result{}, err
-					}
+					updatePhase(ctx, r, xe.Scenario, req.NamespacedName, ph)
 				}
-
+				l.Info("Provisioning was finished")
 			case "jmeter":
 				l.Info("Provisioning for JMeter")
 			default:
 				l.Info("The testing framework wasn't supported yet", "framework", pTask.Spec.Execution[0].Executor)
 			}
 		}
-
 	}
 
+	// Process
+	var pWorker perftestv1.PtWorker
+	if err := r.Get(ctx, req.NamespacedName, &pWorker); err != nil {
+		l.Info("unable to fetch PtWorker")
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	} else {
+		//TODO: handle PtWorker, provision worker in different cluster
+		l.Info("Provision worker in different cluster")
+	}
 	return ctrl.Result{}, nil
 }
 
-// func convert2Text(pTask perftestv1.PtTask) string {
-// 	return ""
-// }
+func updatePhase(ctx context.Context, r *PtTaskReconciler, scenario string, nn types.NamespacedName, ph string) error {
+	l := log.FromContext(ctx)
+	l.Info("Update the phase of provisioning", "phase", ph)
+	var pTask perftestv1.PtTask
+	if err := r.Get(ctx, nn, &pTask); err != nil {
+		l.Error(err, "unable to fetch PtTask")
+		return err
+	}
+	if pTask.Status.Phases == nil {
+		pTask.Status.Phases = make(map[string]string)
+	}
+	pTask.Status.Phases[scenario] = ph
+	if err := r.Client.Status().Update(context.Background(), &pTask); err != nil {
+		l.Error(err, "failed to update status of ptTask", "phase", ph)
+		return err
+	}
+	return nil
+}
 
 func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, pTask *perftestv1.PtTask, scenario string, workerNum int) (string, error) {
 	l := log.FromContext(ctx)
@@ -120,10 +132,7 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 	workerImage := "asia-docker.pkg.dev/play-api-service/test-images/locust-worker"
 
 	// 1. Create Locust master Pod
-	phase := "initial"
-
-	// 2. Create Locust master service for Pod
-	phase = "privision_master"
+	phase := "privision_master"
 	trsConf, _ := yaml.Marshal(pTask.Spec)
 	mp := helper.BuildMasterPod4Locust(masterImage, pTask.Status.Id, scenario, string(trsConf))
 	mpNN := types.NamespacedName{
@@ -136,11 +145,17 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 			l.Error(err, "failed to create Pod for master node of Locust")
 			return phase, err
 		}
+		if err := ctrl.SetControllerReference(pTask, mp, client.Scheme); err != nil {
+			l.Error(err, "unable to set OwnerReferences to master pod", "name", mp.Name, "namespace", mp.Namespace)
+			return phase, err
+		}
+
 	} else {
 		l.Info("master node was existed", "name", mp.Name, "namespace", mp.Namespace)
 
 	}
 
+	// 2. Create Locust master service for Pod
 	ms := helper.BuildMasterService4Locust(corev1.ServiceTypeClusterIP, scenario)
 	msNN := types.NamespacedName{
 		Name:      ms.Name,
@@ -150,6 +165,10 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 	if err := client.Get(ctx, msNN, &xMs); err != nil {
 		if err := client.Create(ctx, ms); err != nil {
 			l.Error(err, "failed to create Service for master node of Locust")
+			return phase, err
+		}
+		if err := ctrl.SetControllerReference(pTask, ms, client.Scheme); err != nil {
+			l.Error(err, "unable to set OwnerReferences to master service", "name", ms.Name, "namespace", ms.Namespace)
 			return phase, err
 		}
 	} else {
@@ -180,10 +199,40 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 			Namespace: wk.Namespace,
 		}
 		if err := client.Get(ctx, wkNN, &xWk); err != nil {
-			if err := client.Create(ctx, wk); err != nil {
-				l.Error(err, "failed to create Pod for worker node of Locust", "worker", wk.ObjectMeta.Name)
-				return phase, err
+			// TODO: Create a Pod for worker in different Cluster
+			if pTask.Spec.Type == "local" {
+				l.Info("Provision workers in the same cluster")
+				if err := client.Create(ctx, wk); err != nil {
+					l.Error(err, "failed to create Pod for worker node of Locust", "worker", wk.ObjectMeta.Name)
+					return phase, err
+				}
+				if err := ctrl.SetControllerReference(pTask, wk, client.Scheme); err != nil {
+					l.Error(err, "unable to set OwnerReferences to worker pod", "name", wk.Name, "namespace", wk.Namespace)
+					return phase, err
+				}
+			} else if pTask.Spec.Type == "distributed" {
+				l.Info("Provision workers in the different clusters")
+				for _, e := range pTask.Spec.Execution {
+					if e.Scenario == scenario {
+
+						for r, t := range e.Traffic {
+							//TODO: provision worker in different cluster
+							l.Info("Provison worker in different region", "region", r)
+							conf, cs, err := helper.KubeClientset(ctx, t.GKECA64, t.GKEEndpoint)
+							if err != nil {
+								l.Error(err, "unable to connect with GKE cluster", "region", t.Region, "endpoint", t.GKEEndpoint)
+								return phase, err
+							}
+							_, err = helper.CreateObject(ctx, cs, *conf, &perftestv1.PtWorker{})
+							if err != nil {
+								l.Error(err, "unable to create PtWorker in GKE cluster", "region", t.Region, "endpoint", t.GKEEndpoint)
+								return phase, err
+							}
+						}
+					}
+				}
 			}
+
 		} else {
 			l.Info("worker node was existed", "name", wk.Name, "namespace", wk.Namespace)
 
@@ -191,18 +240,20 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 
 	}
 
-	// 5. Kick off monitoring and keep update along the way
-	// TODO
+	// TODO: 5. Kick off monitoring and keep update along the way
+	// 5.1 Checking out testing kicked off
+	// 5.2 Starting to aggreagete metrics
 	// go MonitorLocustTesting(scenario, "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
 
-	// 6. Achieve testing logs/reports
-	// TODO
+	// TODO: 6. Achieve testing logs/reports
+	// 6.1 waiting to finish
+	// 6.2 Achieving logs/reports
 
-	// 7. Mark PtTask was done
-	// TODO
+	// TODO: 7. Mark PtTask was done
+	// 7.1 Marking the job is 'done'
 
-	// 8. Singal to clean up all related resources except metadata store & GCS
-	// TODO
+	// TODO: 8. Singal to clean up all related resources except metadata store & GCS
+	// 8. Send clean-up singal
 	return phase, nil
 }
 
