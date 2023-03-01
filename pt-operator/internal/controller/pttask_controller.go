@@ -200,7 +200,7 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 		}
 		if err := client.Get(ctx, wkNN, &xWk); err != nil {
 			// TODO: Create a Pod for worker in different Cluster
-			if pTask.Spec.Type == "local" {
+			if pTask.Spec.Type == "Local" {
 				l.Info("Provision workers in the same cluster")
 				if err := client.Create(ctx, wk); err != nil {
 					l.Error(err, "failed to create Pod for worker node of Locust", "worker", wk.ObjectMeta.Name)

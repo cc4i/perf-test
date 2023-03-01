@@ -11,7 +11,7 @@ metadata:
 spec:
   type: local
   execution:
-    - executor: locust
+    - executor: Locust
       concurrency: 100
       ramp-up: 10s
       hold-for: 5m

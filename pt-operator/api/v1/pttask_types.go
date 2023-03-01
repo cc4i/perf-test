@@ -26,8 +26,8 @@ import (
 // PtTaskSpec defines the desired state of PtTask
 type PtTaskSpec struct {
 	// Task type: local/distributed
-	//+kubebuilder:default:=local
-	//+kubebuilder:validation:Enum:=local;distributed
+	//+kubebuilder:default:=Local
+	//+kubebuilder:validation:Enum:=Local;Distributed
 	Type string `json:"type"`
 
 	// Execution for different scenarios

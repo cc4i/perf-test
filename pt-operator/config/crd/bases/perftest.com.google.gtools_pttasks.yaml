@@ -116,11 +116,11 @@ spec:
                 description: (scenario name) -> (PtTaskScenario)
                 type: object
               type:
-                default: local
+                default: Local
                 description: 'Task type: local/distributed'
                 enum:
-                - local
-                - distributed
+                - Local
+                - Distributed
                 type: string
             required:
             - execution

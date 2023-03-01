@@ -9,4 +9,8 @@ metadata:
     app.kubernetes.io/created-by: pt-operator
   name: ptworker-sample
 spec:
-  # TODO(user): Add fields here
+  id: df116199-2fa8-4216-a834-903226b61a21
+  masterType: Locust
+  locustMaster:
+    host: 10.33.2.104
+    port: 5557
