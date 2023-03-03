@@ -43,7 +43,11 @@ spec:
                       description: The number of target concurrent virtual users
                       type: integer
                     executor:
-                      description: The number of target concurrent virtual users
+                      default: locust
+                      description: 'Executor type: locust, jmeter, etc from https://gettaurus.org/docs/Executors/'
+                      enum:
+                      - locust
+                      - jmeter
                       type: string
                     hold-for:
                       description: Time to hold target concurrency
@@ -65,31 +69,6 @@ spec:
                       description: The name of scenario that described in scenarios
                         part
                       type: string
-                    traffic:
-                      additionalProperties:
-                        description: How traffic would be spread across GKE cluster,
-                        properties:
-                          gkeCA64:
-                            description: Base64 CA acertificate
-                            type: string
-                          gkeEndpoint:
-                            description: External endpoint for GKE
-                            type: string
-                          percent:
-                            description: 'The percentage for traffic: currency * precent/100'
-                            type: integer
-                          region:
-                            description: The region where GKE cluster is provisioned
-                            type: string
-                          saKey64:
-                            description: Base64 key for service account
-                            type: string
-                        required:
-                        - percent
-                        - region
-                        type: object
-                      description: 'Traffic definition: (region) -> (PtTaskTraffic)'
-                      type: object
                     workers:
                       description: Numbers of workers, calculated if not specified
                       minimum: 1
@@ -102,6 +81,22 @@ spec:
                   - scenario
                   type: object
                 type: array
+              images:
+                additionalProperties:
+                  properties:
+                    masterImage:
+                      description: The image for master node
+                      type: string
+                    workerImage:
+                      description: The image for worker node
+                      type: string
+                  required:
+                  - masterImage
+                  - workerImage
+                  type: object
+                description: 'Container images for the scenario: (scenario name) ->
+                  (PtTaskImages)'
+                type: object
               scenarios:
                 additionalProperties:
                   properties:
@@ -115,15 +110,43 @@ spec:
                   type: object
                 description: (scenario name) -> (PtTaskScenario)
                 type: object
+              traffics:
+                additionalProperties:
+                  items:
+                    description: How traffic would be spread across GKE cluster,
+                    properties:
+                      gkeCA64:
+                        description: Base64 CA acertificate
+                        type: string
+                      gkeEndpoint:
+                        description: External endpoint for GKE
+                        type: string
+                      percent:
+                        description: 'The percentage for traffic: currency * precent/100'
+                        type: integer
+                      region:
+                        description: The region where GKE cluster is provisioned
+                        type: string
+                      saKey64:
+                        description: Base64 key for service account
+                        type: string
+                    required:
+                    - percent
+                    - region
+                    type: object
+                  type: array
+                description: 'Traffics definition: (scenario name) -> (PtTaskTraffic)'
+                type: object
               type:
                 default: Local
-                description: 'Task type: local/distributed'
+                description: Task type
                 enum:
                 - Local
                 - Distributed
                 type: string
             required:
             - execution
+            - images
             - scenarios
             - type
             type: object

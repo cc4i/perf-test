@@ -21,6 +21,16 @@ spec:
     - "DEBUG"
     - "--exit-code-on-error"
     - "0"
+    - "--logfile"
+    - "/bzt-configs/worker.log"
+    readinessProbe:
+      exec:
+        command:
+          - "grep"
+          - "'locust.main: Connected to locust master'"
+          - "/bzt-configs/worker.log"
+      initialDelaySeconds: 5
+      periodSeconds: 5
     resources:
       requests: 
         cpu: 500m

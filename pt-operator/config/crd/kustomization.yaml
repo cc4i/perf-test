@@ -3,7 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/perftest.com.google.gtools_pttasks.yaml
-- bases/perftest.com.google.gtools_ptworkers.yaml
+
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

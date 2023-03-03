@@ -9,9 +9,9 @@ metadata:
     app.kubernetes.io/created-by: pt-operator
   name: pttask-sample
 spec:
-  type: local
+  type: Local
   execution:
-    - executor: Locust
+    - executor: locust
       concurrency: 100
       ramp-up: 10s
       hold-for: 5m
@@ -22,3 +22,7 @@ spec:
     test-example:
       default-address: http://blazedemo.com
       script: locustfile.py
+  images:
+    test-example:
+      masterImage: asia-docker.pkg.dev/play-api-service/test-images/taurus-base
+      workerImage: asia-docker.pkg.dev/play-api-service/test-images/locust-worker

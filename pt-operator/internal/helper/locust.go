@@ -168,6 +168,8 @@ func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string
 						"DEBUG",
 						"--exit-code-on-error",
 						"0",
+						"--logfile",
+						"/bzt-configs/worker.log",
 					},
 					ImagePullPolicy: corev1.PullAlways,
 					Resources: corev1.ResourceRequirements{
@@ -175,6 +177,19 @@ func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string
 							corev1.ResourceCPU:    resource.MustParse("1000m"),
 							corev1.ResourceMemory: resource.MustParse("2048Mi"),
 						},
+					},
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							Exec: &corev1.ExecAction{
+								Command: []string{
+									"grep",
+									"'locust.main: Connected to locust master'",
+									"/bzt-configs/worker.log",
+								},
+							},
+						},
+						InitialDelaySeconds: 5,
+						PeriodSeconds:       5,
 					},
 				},
 			},

@@ -25,7 +25,7 @@ import (
 
 // PtTaskSpec defines the desired state of PtTask
 type PtTaskSpec struct {
-	// Task type: local/distributed
+	// Task type
 	//+kubebuilder:default:=Local
 	//+kubebuilder:validation:Enum:=Local;Distributed
 	Type string `json:"type"`
@@ -34,10 +34,18 @@ type PtTaskSpec struct {
 	Execution []PtTaskExecution `json:"execution"`
 	// (scenario name) -> (PtTaskScenario)
 	Scenarios map[string]PtTaskScenario `json:"scenarios"`
+
+	// Container images for the scenario: (scenario name) -> (PtTaskImages)
+	Images map[string]PtTaskImages `json:"images"`
+
+	// Traffics definition: (scenario name) -> (PtTaskTraffic)
+	Traffics map[string][]PtTaskTraffic `json:"traffics,omitempty"`
 }
 
 type PtTaskExecution struct {
-	// The number of target concurrent virtual users
+	// Executor type: locust, jmeter, etc from https://gettaurus.org/docs/Executors/
+	//+kubebuilder:default:=locust
+	//+kubebuilder:validation:Enum:=locust;jmeter
 	Executor string `json:"executor"`
 	// The number of target concurrent virtual users
 	Concurrency int `json:"concurrency"`
@@ -56,9 +64,15 @@ type PtTaskExecution struct {
 	// Numbers of workers, calculated if not specified
 	//+kubebuilder:validation:Minimum=1
 	Workers int `json:"workers,omitempty"`
-	// Traffic definition: (region) -> (PtTaskTraffic)
-	Traffic map[string]PtTaskTraffic `json:"traffic,omitempty"`
 }
+
+type PtTaskImages struct {
+	// The image for master node
+	MasterImage string `json:"masterImage"`
+	// The image for worker node
+	WorkerImage string `json:"workerImage"`
+}
+
 type PtTaskScenario struct {
 	DefaultAddress string `json:"default-address"`
 	Script         string `json:"script"`

@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/nxadm/tail"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -42,26 +45,26 @@ type LocustLdjsonStats struct {
 // Local memory data for metrics
 type PtTaskWorkerMetrics struct {
 	// Totoal users/concurrency ::GuageVec
-	TotalUsers map[string]int
+	TotalUsers int
 	// Totoal RPS ::GuageVec
-	TotalReqsPerSec map[string]int
-	// Total errors occured :: CounterVec
-	TotalErrors map[string]int
-	// Total master ::Guage
-	TotalMasters int
-	// The status of master node ::GuageVec
-	MastersStatus map[string]string
+	TotalReqsPerSec int
+	// Total occured errors :: CounterVec
+	TotalErrors int
+	// The status of master node (0-live/1-unknown) ::GuageVec
+	MastersStatus int
 	// Total worker ::Guage
 	TotalWorkers int
-	// The status of worker ndoe ::GuageVec
-	WorkersStatus map[string]string
+	// The status of worker node: (worker name)->(0-live/1-unknown) ::GuageVec
+	WorkersStatus map[string]int
 
-	// Average response time per endpoint [endpoint -> response time] :: GuageVec
+	// Average response time per endpoint: (endpoint)->(response time) :: GuageVec
 	AvgResponseTimes map[string]float64
 }
 
 var (
-	ptTaskMetrics    = make(map[string]*PtTaskWorkerMetrics)
+	// Data in memory: (scenario)->(*PtTaskWorkerMetrics)
+	ptTaskMetrics = make(map[string]*PtTaskWorkerMetrics)
+	// Totoal users/concurrency
 	pttaskTotalUsers = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_total_users",
@@ -71,6 +74,7 @@ var (
 			"scenario", //each scenario
 		},
 	)
+	// Totoal RPS
 	pttaskTotalReqsPerSec = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_total_request_per_sec",
@@ -80,6 +84,7 @@ var (
 			"scenario", //each scenario
 		},
 	)
+	// Total occured errors
 	pttaskTotalErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "gtools_perftest_pttask_total_errors",
@@ -89,51 +94,53 @@ var (
 			"scenario", //each scenario
 		},
 	)
-
+	// Total number of master node
 	pttaskTotalMasters = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_total_masters",
 			Help: "Number of master node",
 		},
 	)
+	// The status of master node
 	pttaskMastersStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_master_status",
 			Help: "The status of master node",
 		},
 		[]string{
-			"name",     // name of master node
 			"scenario", //each scenario
 		},
 	)
+	// Total number of workers
 	pttaskTotalWorkers = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_total_workers",
 			Help: "Number of worker node",
 		},
 		[]string{
-			"name",     // name of worker node
 			"scenario", //each scenario
 		},
 	)
+	// The status of worker node
 	pttaskWorkersStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_worker_status",
 			Help: "The status of worker node",
 		},
 		[]string{
-			"name",     // name of worker node
+			"worker",   //name of worker node
 			"scenario", //each scenario
 		},
 	)
-
+	// Average response time per endpoint
 	pttaskAvgResponseTimes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gtools_perftest_pttask_avg_response_time",
 			Help: "Average response time per endpoint",
 		},
 		[]string{
-			"endpoint", // Which endpoint
+			"endpoint", //Which endpoint
+			"worker",   //name of worker node
 			"scenario", //each scenario
 		},
 	)
@@ -150,55 +157,36 @@ func updateReponseTimes(scenario string, llj LocustLdjson) {
 		}
 		avg := sum / float64(count)
 
-		if ptMetric, ok := ptTaskMetrics[llj.ClientId]; ok {
+		if ptMetric, ok := ptTaskMetrics[scenario]; ok {
 			if ptMetric.AvgResponseTimes == nil {
 				ptMetric.AvgResponseTimes = make(map[string]float64)
 			}
 			ptMetric.AvgResponseTimes[stat.Name] = avg
 		} else {
 
-			ptTaskMetrics[llj.ClientId] = &PtTaskWorkerMetrics{
+			ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
 				AvgResponseTimes: map[string]float64{
 					stat.Name: avg,
 				},
 			}
 		}
-
-		pttaskAvgResponseTimes.WithLabelValues(stat.Name, scenario).Set(avg)
+		pttaskAvgResponseTimes.WithLabelValues(stat.Name, llj.ClientId, scenario).Set(avg)
 	}
-
 }
 
 func updateTotals(scenario string, llj LocustLdjson) {
-	if ptMetric, ok := ptTaskMetrics[llj.ClientId]; ok {
-		if ptMetric.TotalUsers == nil {
-			ptMetric.TotalUsers = make(map[string]int)
-		}
-		ptMetric.TotalUsers[scenario] = llj.UserCount
-		if ptMetric.TotalReqsPerSec == nil {
-			ptMetric.TotalReqsPerSec = make(map[string]int)
-		}
-		ptMetric.TotalReqsPerSec[scenario] = totalVals(llj.StatsTotal.NumReqsPerSec)
+	if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+		ptMetric.TotalUsers = llj.UserCount
+		ptMetric.TotalReqsPerSec = totalVals(llj.StatsTotal.NumReqsPerSec)
 	} else {
-		ptTaskMetrics[llj.ClientId] = &PtTaskWorkerMetrics{
-			TotalUsers: map[string]int{
-				scenario: llj.UserCount,
-			},
-			TotalReqsPerSec: map[string]int{
-				scenario: totalVals(llj.StatsTotal.NumReqsPerSec),
-			},
+		ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
+			TotalUsers:      llj.UserCount,
+			TotalReqsPerSec: totalVals(llj.StatsTotal.NumReqsPerSec),
 		}
 	}
 
-	totalU := 0
-	totalRps := 0
-	for _, v := range ptTaskMetrics {
-		totalU = totalU + v.TotalUsers[scenario]
-		totalRps = totalRps + v.TotalReqsPerSec[scenario]
-
-	}
-	pttaskTotalUsers.WithLabelValues(scenario).Set(float64(totalU))
-	pttaskTotalReqsPerSec.WithLabelValues(scenario).Set(float64(totalRps))
+	pttaskTotalUsers.WithLabelValues(scenario).Set(float64(totalVals(llj.StatsTotal.NumReqsPerSec)))
+	pttaskTotalReqsPerSec.WithLabelValues(scenario).Set(float64(totalVals(llj.StatsTotal.NumReqsPerSec)))
 
 }
 
@@ -210,7 +198,7 @@ func totalVals(m map[string]int) int {
 	return total
 }
 
-// Monitoring testing result throung Locust log file, called locust-workers.ldjson by default
+// Monitoring testing result through Locust log file, called locust-workers.ldjson by default
 func MonitorLocustTesting(scenario string, file string) {
 	l := log.Log
 	t, err := tail.TailFile(
@@ -234,8 +222,8 @@ func MonitorLocustTesting(scenario string, file string) {
 	}
 }
 
-// Monitoring master node for Locust
-func monitorLocustMaster(file string) {
+// Monitoring master node for Locust, called bzt.log by default
+func monitorLocustMaster(scenario string, file string) {
 	l := log.Log
 	t, err := tail.TailFile(
 		file, tail.Config{Follow: true, ReOpen: true})
@@ -245,7 +233,14 @@ func monitorLocustMaster(file string) {
 		// decode content line by line
 		for line := range t.Lines {
 			if strings.HasSuffix(line.Text, " at /bzt-configs") {
-				//TODO
+				if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+					ptMetric.MastersStatus = 0
+				} else {
+					ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
+						MastersStatus: 0,
+					}
+				}
+				pttaskMastersStatus.WithLabelValues(scenario).Set(0)
 			}
 		}
 	}
@@ -253,8 +248,30 @@ func monitorLocustMaster(file string) {
 }
 
 // Monitoring worker node for Locust
-func monitorLocustWorker() {
-	//TODO
+func monitorLocustLocalWorker(scenario string, r *PtTaskReconciler, nn types.NamespacedName) {
+	//TODO: monitor worker node by check worker pod
+	ctx := context.Background()
+	var workerPod corev1.Pod
+	if err := r.Get(ctx, nn, &workerPod); err != nil {
+
+	} else {
+		if workerPod.Status.Phase == corev1.PodRunning {
+
+		} else {
+			if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+				ptMetric.WorkersStatus[workerPod.Name] = 0
+			} else {
+				ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
+					WorkersStatus: map[string]int{workerPod.Name: 0},
+				}
+			}
+			ptTaskMetrics[scenario].WorkersStatus[workerPod.Name] = 0
+		}
+	}
+}
+
+func monitorLocustRemoteWorker(scenario string) {
+	//TODO: monitor worker node by check worker pod
 }
 
 func init() {

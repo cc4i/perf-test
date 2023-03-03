@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/resource"
@@ -67,6 +69,19 @@ func CreateObject(ctx context.Context, kubeClientset kubernetes.Interface, restC
 	// Use the REST helper to create the object in the "default" namespace.
 	restHelper := resource.NewHelper(restClient, mapping)
 	return restHelper.Create("default", false, obj)
+}
+
+func PhaseOfPod(ctx context.Context, kubeClientset kubernetes.Interface, podName string, podNamespace string) (corev1.PodPhase, error) {
+	l := log.FromContext(ctx)
+	//Get a pod status from kubeClientset
+	pod, err := kubeClientset.CoreV1().Pods(podName).Get(ctx, podNamespace, metav1.GetOptions{})
+	if err != nil {
+		l.Error(err, "failed to get pod")
+		return corev1.PodUnknown, err
+	}
+	l.Info("the phase of pod", "phase", pod.Status.Phase)
+
+	return pod.Status.Phase, nil
 }
 
 func newRestClient(restConfig rest.Config, gv schema.GroupVersion) (rest.Interface, error) {
