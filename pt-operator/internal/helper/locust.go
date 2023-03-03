@@ -72,10 +72,29 @@ func BuildMasterPod4Locust(img string, id string, scenario string, trsConf strin
 							corev1.ResourceMemory: resource.MustParse("2048Mi"),
 						},
 					},
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							Exec: &corev1.ExecAction{
+								Command: []string{
+									"grep",
+									" at /bzt-configs",
+									"/taurus-logs/" + id + "/" + scenario + "/bzt.log",
+								},
+							},
+						},
+						InitialDelaySeconds: 5,
+						PeriodSeconds:       30,
+						FailureThreshold:    100,
+					},
+
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "taurus-config",
 							MountPath: "/taurus-configs",
+						},
+						{
+							Name:      "bzt-pvc",
+							MountPath: "/taurus-logs",
 						},
 					},
 				},
@@ -169,7 +188,7 @@ func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string
 						"--exit-code-on-error",
 						"0",
 						"--logfile",
-						"/bzt-configs/worker.log",
+						"/tmp/worker.log",
 					},
 					ImagePullPolicy: corev1.PullAlways,
 					Resources: corev1.ResourceRequirements{
@@ -183,13 +202,14 @@ func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string
 							Exec: &corev1.ExecAction{
 								Command: []string{
 									"grep",
-									"'locust.main: Connected to locust master'",
-									"/bzt-configs/worker.log",
+									"locust.main: Connected to locust master",
+									"/tmp/worker.log",
 								},
 							},
 						},
 						InitialDelaySeconds: 5,
-						PeriodSeconds:       5,
+						PeriodSeconds:       30,
+						FailureThreshold:    100,
 					},
 				},
 			},

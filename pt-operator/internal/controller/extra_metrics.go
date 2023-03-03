@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
-	"strings"
+	"time"
 
+	"com.google.gtools/pt-operator/internal/helper"
 	"github.com/nxadm/tail"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -201,6 +206,8 @@ func totalVals(m map[string]int) int {
 // Monitoring testing result through Locust log file, called locust-workers.ldjson by default
 func MonitorLocustTesting(scenario string, file string) {
 	l := log.Log
+	//TODO:monitor testing result
+	file = "/Users/chuancc/mywork/labs/gtools/perf-test/locust/af3e5dd7-4178-4bcc-8a1c-6fafe4768059/test-example/locust-workers.ldjson"
 	t, err := tail.TailFile(
 		file, tail.Config{Follow: true, ReOpen: true})
 	if err != nil {
@@ -223,55 +230,99 @@ func MonitorLocustTesting(scenario string, file string) {
 }
 
 // Monitoring master node for Locust, called bzt.log by default
-func monitorLocustMaster(scenario string, file string) {
+func MonitorLocustMaster(scenario string, r *PtTaskReconciler, nn types.NamespacedName) {
+	//TODO: monitor master node
 	l := log.Log
-	t, err := tail.TailFile(
-		file, tail.Config{Follow: true, ReOpen: true})
-	if err != nil {
-		l.Error(err, "failed to tail locust.log")
-	} else {
-		// decode content line by line
-		for line := range t.Lines {
-			if strings.HasSuffix(line.Text, " at /bzt-configs") {
-				if ptMetric, ok := ptTaskMetrics[scenario]; ok {
-					ptMetric.MastersStatus = 0
-				} else {
-					ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
-						MastersStatus: 0,
-					}
-				}
-				pttaskMastersStatus.WithLabelValues(scenario).Set(0)
+	ctx := context.Background()
+	var masterPod corev1.Pod
+	var status int
+	for {
+		if err := r.Get(ctx, nn, &masterPod); err != nil {
+			status = 1
+			l.Error(err, "failed to get master pod")
+		} else {
+			l.Info("get master pod", "name", masterPod.Name)
+			if masterPod.Status.Phase == corev1.PodRunning {
+				status = 0
 			}
 		}
+		if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+			ptMetric.MastersStatus = status
+		} else {
+			ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
+				MastersStatus: status,
+			}
+
+		}
+
+		pttaskMastersStatus.WithLabelValues(scenario).Set(float64(status))
+		if status == 0 {
+			pttaskTotalMasters.Set(float64(1))
+		} else {
+			pttaskTotalMasters.Set(float64(0))
+		}
+		time.Sleep(5 * time.Second)
 	}
 
 }
 
 // Monitoring worker node for Locust
-func monitorLocustLocalWorker(scenario string, r *PtTaskReconciler, nn types.NamespacedName) {
+func MonitorLocustLocalWorker(scenario string, r *PtTaskReconciler, nn types.NamespacedName) {
 	//TODO: monitor worker node by check worker pod
 	ctx := context.Background()
-	var workerPod corev1.Pod
-	if err := r.Get(ctx, nn, &workerPod); err != nil {
+	l := log.Log
 
+	var workerPodList corev1.PodList
+	rl, _ := labels.NewRequirement("app", selection.Equals, []string{"locust-worker"})
+	if err := r.List(ctx, &workerPodList, &client.ListOptions{Namespace: nn.Namespace, LabelSelector: labels.NewSelector().Add(*rl)}); err != nil {
+		l.Error(err, "failed to list worker pods")
 	} else {
-		if workerPod.Status.Phase == corev1.PodRunning {
-
-		} else {
+		for _, pod := range workerPodList.Items {
+			status := 1
+			if pod.Status.Phase == corev1.PodRunning {
+				status = 0
+			}
 			if ptMetric, ok := ptTaskMetrics[scenario]; ok {
-				ptMetric.WorkersStatus[workerPod.Name] = 0
+				ptMetric.WorkersStatus[pod.Name] = status
 			} else {
 				ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
-					WorkersStatus: map[string]int{workerPod.Name: 0},
+					WorkersStatus: map[string]int{pod.Name: status},
 				}
 			}
-			ptTaskMetrics[scenario].WorkersStatus[workerPod.Name] = 0
+			ptTaskMetrics[scenario].WorkersStatus[pod.Name] = status
+			pttaskWorkersStatus.WithLabelValues(pod.Name, scenario).Set(float64(status))
 		}
 	}
+
 }
 
-func monitorLocustRemoteWorker(scenario string) {
+func MonitorLocustRemoteWorker(scenario string, workerId string, caText64 string, gkeEndpoint string) {
 	//TODO: monitor worker node by check worker pod
+	ctx := context.Background()
+	name := "locust-worker-" + scenario + "-" + workerId
+	var workerPod corev1.Pod
+	status := 1
+	if _, clientset, err := helper.KubeClientset(ctx, caText64, gkeEndpoint); err != nil {
+
+	} else {
+		//Get Pod
+		if workerPod, err := clientset.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{}); err != nil {
+		} else {
+
+			if workerPod.Status.Phase == corev1.PodRunning {
+				status = 0
+			}
+		}
+		if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+			ptMetric.WorkersStatus[workerPod.Name] = status
+		} else {
+			ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
+				WorkersStatus: map[string]int{workerPod.Name: status},
+			}
+		}
+		ptTaskMetrics[scenario].WorkersStatus[workerPod.Name] = status
+		pttaskWorkersStatus.WithLabelValues(scenario, workerPod.Name).Set(float64(status))
+	}
 }
 
 func init() {
@@ -279,5 +330,7 @@ func init() {
 	metrics.Registry.MustRegister(pttaskTotalUsers, pttaskTotalReqsPerSec, pttaskTotalErrors,
 		pttaskTotalMasters, pttaskMastersStatus, pttaskTotalWorkers, pttaskWorkersStatus,
 		pttaskAvgResponseTimes)
+
+	// pttaskMastersStatus.WithLabelValues("chuan").Set(float64(0))
 
 }

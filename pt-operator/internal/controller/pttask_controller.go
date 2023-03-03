@@ -133,12 +133,12 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 	}
 	var xMp = corev1.Pod{}
 	if err := client.Get(ctx, mpNN, &xMp); err != nil {
-		if err := client.Create(ctx, mp); err != nil {
-			l.Error(err, "failed to create Pod for master node of Locust")
-			return phase, err
-		}
 		if err := ctrl.SetControllerReference(pTask, mp, client.Scheme); err != nil {
 			l.Error(err, "unable to set OwnerReferences to master pod", "name", mp.Name, "namespace", mp.Namespace)
+			return phase, err
+		}
+		if err := client.Create(ctx, mp); err != nil {
+			l.Error(err, "failed to create Pod for master node of Locust")
 			return phase, err
 		}
 
@@ -155,12 +155,12 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 	}
 	var xMs = corev1.Service{}
 	if err := client.Get(ctx, msNN, &xMs); err != nil {
-		if err := client.Create(ctx, ms); err != nil {
-			l.Error(err, "failed to create Service for master node of Locust")
-			return phase, err
-		}
 		if err := ctrl.SetControllerReference(pTask, ms, client.Scheme); err != nil {
 			l.Error(err, "unable to set OwnerReferences to master service", "name", ms.Name, "namespace", ms.Namespace)
+			return phase, err
+		}
+		if err := client.Create(ctx, ms); err != nil {
+			l.Error(err, "failed to create Service for master node of Locust")
 			return phase, err
 		}
 	} else {
@@ -180,26 +180,26 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 		}
 	}
 	l.Info("master service for Locust is ready", "host", svcHost, "port", svcPort)
+	go MonitorLocustMaster(scenario, client, mpNN)
 
 	phase = "privision_worker"
 	// Creat multiple workers
 	for i := 1; i < workerNum+1; i++ {
 		wk := helper.BuildLocusterWorker4Locust(pTask.Spec.Images[scenario].WorkerImage, svcHost, svcPort, scenario, strconv.Itoa(i))
-		var xWk = corev1.Pod{}
 		wkNN := types.NamespacedName{
 			Name:      wk.Name,
 			Namespace: wk.Namespace,
 		}
-		if err := client.Get(ctx, wkNN, &xWk); err != nil {
+		if err := client.Get(ctx, wkNN, &corev1.Pod{}); err != nil {
 			// TODO: Create a Pod for worker in different Cluster
 			if pTask.Spec.Type == "Local" {
 				l.Info("Provision workers in the same cluster")
-				if err := client.Create(ctx, wk); err != nil {
-					l.Error(err, "failed to create Pod for worker node of Locust", "worker", wk.ObjectMeta.Name)
-					return phase, err
-				}
 				if err := ctrl.SetControllerReference(pTask, wk, client.Scheme); err != nil {
 					l.Error(err, "unable to set OwnerReferences to worker pod", "name", wk.Name, "namespace", wk.Namespace)
+					return phase, err
+				}
+				if err := client.Create(ctx, wk); err != nil {
+					l.Error(err, "failed to create Pod for worker node of Locust", "worker", wk.ObjectMeta.Name)
 					return phase, err
 				}
 			} else if pTask.Spec.Type == "Distributed" {
@@ -232,7 +232,7 @@ func do4Locust(ctx context.Context, client *PtTaskReconciler, req ctrl.Request, 
 			l.Info("worker node was existed", "name", wk.Name, "namespace", wk.Namespace)
 
 		}
-
+		go MonitorLocustLocalWorker(scenario, client, wkNN)
 	}
 
 	// TODO: 5. Kick off monitoring and keep update along the way
