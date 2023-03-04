@@ -27,7 +27,7 @@ import (
 type PtTaskSpec struct {
 	// Task type
 	//+kubebuilder:default:=Local
-	//+kubebuilder:validation:Enum:=Local;Distributed
+	//+kubebuilder:validation:Enum:=Local;Distribution
 	Type string `json:"type"`
 
 	// Execution for different scenarios
@@ -95,12 +95,11 @@ type PtTaskTraffic struct {
 // PtTaskStatus defines the observed state of PtTask
 type PtTaskStatus struct {
 
-	// Phases included following status per testing scenario:
-	// - "privision_master",
-	// - "provision_worker",
-	// - "testing",
-	// - "achieving_logs",
-	// - "done"
+	// Phases included following status per testing scenario: (scenario name) -> (phase)
+	// - "PrivisionMaster",
+	// - "ProvisionWorker",
+	// - "Testing",
+	// - "Done"
 	Phases map[string]string `json:"phase,omitempty"`
 	// Each PtTask has an unique Id
 	Id string `json:"id"`

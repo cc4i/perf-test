@@ -8,10 +8,10 @@ import (
 )
 
 // Build a Pod as Locust Master as per PtTask
-func BuildMasterPod4Locust(img string, id string, scenario string, trsConf string) *corev1.Pod {
+func BuildMasterPod4Locust(ns string, img string, id string, scenario string, trsConf string) *corev1.Pod {
 	gsec := int64(30)
 	name := "locust-master-" + scenario
-	ns := "default"
+
 	labels := map[string]string{
 		"module":   "performance-testing",
 		"app":      "locust-master",
@@ -121,9 +121,8 @@ func BuildMasterPod4Locust(img string, id string, scenario string, trsConf strin
 }
 
 // svcType could be "ClusterIP" or "LoadBlancer". "LoadBlancer" is to expose endpoint publicly.
-func BuildMasterService4Locust(svcType corev1.ServiceType, scenario string) *corev1.Service {
+func BuildMasterService4Locust(ns string, svcType corev1.ServiceType, scenario string) *corev1.Service {
 	name := "locust-master-" + scenario + "-svc"
-	ns := "default"
 
 	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -151,10 +150,10 @@ func BuildMasterService4Locust(svcType corev1.ServiceType, scenario string) *cor
 }
 
 // Build a Pod as Locust Worker as per PtTask
-func BuildLocusterWorker4Locust(img string, masterHost string, masterPort string, scenario string, workerId string) *corev1.Pod {
+func BuildLocusterWorker4Locust(ns string, img string, masterHost string, masterPort string, scenario string, workerId string) *corev1.Pod {
 	gsec := int64(30)
 	name := "locust-worker-" + scenario + "-" + workerId
-	ns := "default"
+
 	labels := map[string]string{
 		"module":   "performance-testing",
 		"app":      "locust-worker",

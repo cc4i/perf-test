@@ -1,0 +1,30 @@
+Traceback (most recent call last):
+  File "src/gevent/greenlet.py", line 908, in gevent._gevent_cgreenlet.Greenlet.run
+  File "/usr/local/lib/python3.9/dist-packages/locust/runners.py", line 1088, in client_listener
+    self.environment.events.worker_report.fire(client_id=msg.node_id, data=msg.data)
+  File "/usr/local/lib/python3.9/dist-packages/locust/event.py", line 40, in fire
+    handler(**kwargs)
+  File "/usr/local/lib/python3.9/dist-packages/bzt/resources/locustio-taurus-wrapper.py", line 91, in __on_worker_report
+    self.__check_limits()
+  File "/usr/local/lib/python3.9/dist-packages/bzt/resources/locustio-taurus-wrapper.py", line 41, in __check_limits
+    raise StopUser('Duration limit reached')
+locust.exception.StopUser: Duration limit reached
+2023-03-04T09:43:15Z <Greenlet at 0x7f9e00d90ae0: <bound method MasterRunner.client_listener of <locust.runners.MasterRunner object at 0x7f9e041e2fd0>>> failed with StopUser
+
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+GET      /                                                                              11697     0(0.00%) |    505     399    3384    440 |   37.90        0.00
+POST     /login                                                                           100     0(0.00%) |    789     519    1126    760 |    0.32        0.00
+GET      /vacation.html                                                                 11573     0(0.00%) |    504     395    3685    440 |   37.50        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                     23370     0(0.00%) |    506     395    3685    440 |   75.72        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+GET      /                                                                                     440    460    490    510    590    780   1300   1600   2900   3400   3400  11697
+POST     /login                                                                                770    820    870    930   1000   1000   1000   1100   1100   1100   1100    100
+GET      /vacation.html                                                                        440    460    490    500    590    760   1300   1600   3000   3600   3700  11573
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                            440    470    490    510    590    780   1300   1600   2900   3400   3700  23370
+

@@ -17,11 +17,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func KubeClientset(ctx context.Context, caText64 string, gkeEndpoint string) (*rest.Config, *kubernetes.Clientset, error) {
+func Kube2Client(ctx context.Context, caText64 string, gkeEndpoint string) (*rest.Config, *kubernetes.Clientset, error) {
 	l := log.FromContext(ctx)
+	l.Info("decode caText64", "caText64", caText64)
 	caText, err := base64.StdEncoding.DecodeString(caText64)
 	if err != nil {
 		l.Error(err, "failed to decode text")
+		return nil, nil, err
 	}
 	config := &rest.Config{
 		TLSClientConfig: rest.TLSClientConfig{

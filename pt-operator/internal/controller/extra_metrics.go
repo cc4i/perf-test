@@ -207,7 +207,7 @@ func totalVals(m map[string]int) int {
 func MonitorLocustTesting(scenario string, file string) {
 	l := log.Log
 	//TODO:monitor testing result
-	file = "/Users/chuancc/mywork/labs/gtools/perf-test/locust/af3e5dd7-4178-4bcc-8a1c-6fafe4768059/test-example/locust-workers.ldjson"
+	file = "/Users/chuancc/mywork/labs/gtools/perf-test/pt-operator/config/samples/test-example/locust-workers.ldjson"
 	t, err := tail.TailFile(
 		file, tail.Config{Follow: true, ReOpen: true})
 	if err != nil {
@@ -215,13 +215,13 @@ func MonitorLocustTesting(scenario string, file string) {
 	} else {
 		// decode content line by line
 		for line := range t.Lines {
-			l.Info(line.Text)
+			// l.Info(line.Text)
 			var llj LocustLdjson
 			err = json.Unmarshal([]byte(line.Text), &llj)
 			if err != nil {
 				l.Error(err, "failed to unmarshal logs")
 			} else {
-				l.Info("client_id", llj.ClientId)
+				l.Info("process logs from simulated worker", "client_id", llj.ClientId)
 				updateTotals(scenario, llj)
 				updateReponseTimes(scenario, llj)
 			}
@@ -267,14 +267,14 @@ func MonitorLocustMaster(scenario string, r *PtTaskReconciler, nn types.Namespac
 }
 
 // Monitoring worker node for Locust
-func MonitorLocustLocalWorker(scenario string, r *PtTaskReconciler, nn types.NamespacedName) {
+func MonitorLocustLocalWorker(scenario string, ptr *PtTaskReconciler, namespace string) {
 	//TODO: monitor worker node by check worker pod
 	ctx := context.Background()
 	l := log.Log
 
 	var workerPodList corev1.PodList
 	rl, _ := labels.NewRequirement("app", selection.Equals, []string{"locust-worker"})
-	if err := r.List(ctx, &workerPodList, &client.ListOptions{Namespace: nn.Namespace, LabelSelector: labels.NewSelector().Add(*rl)}); err != nil {
+	if err := ptr.List(ctx, &workerPodList, &client.ListOptions{Namespace: namespace, LabelSelector: labels.NewSelector().Add(*rl)}); err != nil {
 		l.Error(err, "failed to list worker pods")
 	} else {
 		for _, pod := range workerPodList.Items {
@@ -283,6 +283,9 @@ func MonitorLocustLocalWorker(scenario string, r *PtTaskReconciler, nn types.Nam
 				status = 0
 			}
 			if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+				if ptMetric.WorkersStatus == nil {
+					ptMetric.WorkersStatus = make(map[string]int)
+				}
 				ptMetric.WorkersStatus[pod.Name] = status
 			} else {
 				ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
@@ -296,17 +299,18 @@ func MonitorLocustLocalWorker(scenario string, r *PtTaskReconciler, nn types.Nam
 
 }
 
-func MonitorLocustRemoteWorker(scenario string, workerId string, caText64 string, gkeEndpoint string) {
+func MonitorLocustDistributionWorker(scenario string, workerId string, caText64 string, gkeEndpoint string) {
 	//TODO: monitor worker node by check worker pod
+	l := log.Log
 	ctx := context.Background()
 	name := "locust-worker-" + scenario + "-" + workerId
 	var workerPod corev1.Pod
 	status := 1
-	if _, clientset, err := helper.KubeClientset(ctx, caText64, gkeEndpoint); err != nil {
-
+	if _, k2c, err := helper.Kube2Client(ctx, caText64, gkeEndpoint); err != nil {
+		l.Error(err, "failed to get kube2client")
 	} else {
 		//Get Pod
-		if workerPod, err := clientset.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{}); err != nil {
+		if workerPod, err := k2c.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{}); err != nil {
 		} else {
 
 			if workerPod.Status.Phase == corev1.PodRunning {
@@ -314,6 +318,9 @@ func MonitorLocustRemoteWorker(scenario string, workerId string, caText64 string
 			}
 		}
 		if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+			if ptMetric.WorkersStatus == nil {
+				ptMetric.WorkersStatus = make(map[string]int)
+			}
 			ptMetric.WorkersStatus[workerPod.Name] = status
 		} else {
 			ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
