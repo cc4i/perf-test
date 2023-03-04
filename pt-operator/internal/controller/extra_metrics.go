@@ -221,7 +221,7 @@ func MonitorLocustTesting(scenario string, file string) {
 			if err != nil {
 				l.Error(err, "failed to unmarshal logs")
 			} else {
-				l.Info("process logs from simulated worker", "client_id", llj.ClientId)
+				l.Info("process logs from simulated worker", "client_id", llj.ClientId, "scenario", scenario, "user_count", llj.UserCount)
 				updateTotals(scenario, llj)
 				updateReponseTimes(scenario, llj)
 			}
@@ -271,30 +271,33 @@ func MonitorLocustLocalWorker(scenario string, ptr *PtTaskReconciler, namespace 
 	//TODO: monitor worker node by check worker pod
 	ctx := context.Background()
 	l := log.Log
-
 	var workerPodList corev1.PodList
 	rl, _ := labels.NewRequirement("app", selection.Equals, []string{"locust-worker"})
-	if err := ptr.List(ctx, &workerPodList, &client.ListOptions{Namespace: namespace, LabelSelector: labels.NewSelector().Add(*rl)}); err != nil {
-		l.Error(err, "failed to list worker pods")
-	} else {
-		for _, pod := range workerPodList.Items {
-			status := 1
-			if pod.Status.Phase == corev1.PodRunning {
-				status = 0
-			}
-			if ptMetric, ok := ptTaskMetrics[scenario]; ok {
-				if ptMetric.WorkersStatus == nil {
-					ptMetric.WorkersStatus = make(map[string]int)
+
+	for {
+		if err := ptr.List(ctx, &workerPodList, &client.ListOptions{Namespace: namespace, LabelSelector: labels.NewSelector().Add(*rl)}); err != nil {
+			l.Error(err, "failed to list worker pods")
+		} else {
+			for _, pod := range workerPodList.Items {
+				status := 1
+				if pod.Status.Phase == corev1.PodRunning {
+					status = 0
 				}
-				ptMetric.WorkersStatus[pod.Name] = status
-			} else {
-				ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
-					WorkersStatus: map[string]int{pod.Name: status},
+				if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+					if ptMetric.WorkersStatus == nil {
+						ptMetric.WorkersStatus = make(map[string]int)
+					}
+					ptMetric.WorkersStatus[pod.Name] = status
+				} else {
+					ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
+						WorkersStatus: map[string]int{pod.Name: status},
+					}
 				}
+				ptTaskMetrics[scenario].WorkersStatus[pod.Name] = status
+				pttaskWorkersStatus.WithLabelValues(pod.Name, scenario).Set(float64(status))
 			}
-			ptTaskMetrics[scenario].WorkersStatus[pod.Name] = status
-			pttaskWorkersStatus.WithLabelValues(pod.Name, scenario).Set(float64(status))
 		}
+		time.Sleep(20 * time.Second)
 	}
 
 }
@@ -306,30 +309,34 @@ func MonitorLocustDistributionWorker(scenario string, workerId string, caText64 
 	name := "locust-worker-" + scenario + "-" + workerId
 	var workerPod corev1.Pod
 	status := 1
-	if _, k2c, err := helper.Kube2Client(ctx, caText64, gkeEndpoint); err != nil {
-		l.Error(err, "failed to get kube2client")
-	} else {
-		//Get Pod
-		if workerPod, err := k2c.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{}); err != nil {
+	for {
+		if _, k2c, err := helper.Kube2Client(ctx, caText64, gkeEndpoint); err != nil {
+			l.Error(err, "failed to get kube2client")
 		} else {
+			//Get Pod
+			if workerPod, err := k2c.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{}); err != nil {
+			} else {
 
-			if workerPod.Status.Phase == corev1.PodRunning {
-				status = 0
+				if workerPod.Status.Phase == corev1.PodRunning {
+					status = 0
+				}
 			}
+			if ptMetric, ok := ptTaskMetrics[scenario]; ok {
+				if ptMetric.WorkersStatus == nil {
+					ptMetric.WorkersStatus = make(map[string]int)
+				}
+				ptMetric.WorkersStatus[workerPod.Name] = status
+			} else {
+				ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
+					WorkersStatus: map[string]int{workerPod.Name: status},
+				}
+			}
+			ptTaskMetrics[scenario].WorkersStatus[workerPod.Name] = status
+			pttaskWorkersStatus.WithLabelValues(scenario, workerPod.Name).Set(float64(status))
 		}
-		if ptMetric, ok := ptTaskMetrics[scenario]; ok {
-			if ptMetric.WorkersStatus == nil {
-				ptMetric.WorkersStatus = make(map[string]int)
-			}
-			ptMetric.WorkersStatus[workerPod.Name] = status
-		} else {
-			ptTaskMetrics[scenario] = &PtTaskWorkerMetrics{
-				WorkersStatus: map[string]int{workerPod.Name: status},
-			}
-		}
-		ptTaskMetrics[scenario].WorkersStatus[workerPod.Name] = status
-		pttaskWorkersStatus.WithLabelValues(scenario, workerPod.Name).Set(float64(status))
+		time.Sleep(20 * time.Second)
 	}
+
 }
 
 func init() {

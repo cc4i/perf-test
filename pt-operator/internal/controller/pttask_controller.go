@@ -252,7 +252,7 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	// 5.2 Starting to aggreagete metrics
 	phase = "Testing"
 	updatePhase(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, phase)
-	// go MonitorLocustTesting(scenario, "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
+	go MonitorLocustTesting(scenario, "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
 
 	// TODO: 6. House keeping after testing
 	// 6.1 waiting to finish

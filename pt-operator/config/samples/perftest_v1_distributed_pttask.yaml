@@ -3,11 +3,11 @@ kind: PtTask
 metadata:
   labels:
     app.kubernetes.io/name: pttask
-    app.kubernetes.io/instance: pttask-sample
+    app.kubernetes.io/instance: pttask-distributed-sample
     app.kubernetes.io/part-of: pt-operator
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: pt-operator
-  name: pttask-distribute-sample
+  name: pttask-distributed-sample
 spec:
   type: Distribution
   execution:
