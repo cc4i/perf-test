@@ -18,6 +18,9 @@ package controller
 
 import (
 	"context"
+	"io"
+	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"cloud.google.com/go/storage"
 	perftestv1 "com.google.gtools/pt-operator/api/v1"
 	"com.google.gtools/pt-operator/internal/helper"
 )
@@ -85,10 +89,10 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				// l.Info("EO:")
 				if ph, err := do4Locust(ctx, r, req, &pTask, xe.Scenario, xe.Workers); err != nil {
 					l.Error(err, "failed to provision/execute Locust", "phase", ph)
-					updatePhase(ctx, r, xe.Scenario, req.NamespacedName, ph)
+					updateStatus(ctx, r, xe.Scenario, req.NamespacedName, ph, "")
 					return ctrl.Result{}, err
 				} else {
-					updatePhase(ctx, r, xe.Scenario, req.NamespacedName, ph)
+					updateStatus(ctx, r, xe.Scenario, req.NamespacedName, ph, "")
 				}
 				l.Info("Provisioning was finished")
 			case "jmeter":
@@ -102,20 +106,31 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-func updatePhase(ctx context.Context, r *PtTaskReconciler, scenario string, nn types.NamespacedName, ph string) error {
+// Update the status of PtTask, including phase and archive
+func updateStatus(ctx context.Context, r *PtTaskReconciler, scenario string, nn types.NamespacedName, ph string, arch string) error {
 	l := log.FromContext(ctx)
-	l.Info("Update the phase of provisioning", "scenario", scenario, "phase", ph)
+	l.Info("Update status of PtTask", "scenario", scenario)
 	var pTask perftestv1.PtTask
 	if err := r.Get(ctx, nn, &pTask); err != nil {
 		l.Error(err, "unable to fetch PtTask", "name", nn.Name, "namespace", nn.Namespace)
 		return err
 	}
-	if pTask.Status.Phases == nil {
+	if pTask.Status.Phases == nil && ph != "" {
 		pTask.Status.Phases = make(map[string]string)
 	}
-	pTask.Status.Phases[scenario] = ph
+	if pTask.Status.Archives == nil && ph != "" {
+		pTask.Status.Archives = make(map[string]string)
+	}
+	if ph != "" {
+		pTask.Status.Phases[scenario] = ph
+		l.Info("Update phase of status", "scenario", scenario, "phase", ph)
+	}
+	if arch != "" {
+		pTask.Status.Archives[scenario] = arch
+		l.Info("Update archive of status", "scenario", scenario, "archive", arch)
+	}
 	if err := r.Client.Status().Update(context.Background(), &pTask); err != nil {
-		l.Error(err, "failed to update status of ptTask", "scenario", scenario, "phase", ph)
+		l.Error(err, "failed to update status of ptTask", "scenario", scenario)
 		return err
 	}
 	return nil
@@ -251,10 +266,10 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	// 5.1 Checking out testing kicked off
 	// 5.2 Starting to aggreagete metrics
 	phase = "Testing"
-	updatePhase(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, phase)
-	if pTask.Spec.LocalDebug.Ldjson != "" {
-		l.Info("local debug mode", "ldjson", pTask.Spec.LocalDebug.Ldjson)
-		go MonitorLocustTesting(scenario, pTask.Spec.LocalDebug.Ldjson)
+	updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, phase, "")
+	if pTask.Spec.TestingOutput.Ldjson != "" {
+		l.Info("local debug mode", "ldjson", pTask.Spec.TestingOutput.Ldjson)
+		go MonitorLocustTesting(scenario, pTask.Spec.TestingOutput.Ldjson)
 	} else {
 		l.Info("monitoring testing logs", "ldjson", "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
 		go MonitorLocustTesting(scenario, "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
@@ -288,10 +303,23 @@ func checkMasterStatus(ctx context.Context, ptr *PtTaskReconciler, pTask *perfte
 							if st.State.Terminated.Reason == "Completed" {
 								l.Info("locust master is completed", "name", p.Name, "namespace", p.Namespace)
 								//TODO: Archive the logs into GCS
+								ptr.Get(ctx, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, pTask)
+								if pTask.Status.Archives != nil && pTask.Status.Archives[scenario] != "" {
+									l.Info("the logs are already archived into GCS", "scenario", scenario)
+									isAllDone--
+									continue
+								}
 								l.Info("archive logs into GCS", "scenario", scenario)
+								if err := copyFileToGCS(ctx, pTask.Spec.TestingOutput.LogDir, pTask.Spec.TestingOutput.Bucket, pTask.Status.Id+"/"+scenario); err != nil {
+									l.Error(err, "unable to copy logs into GCS", "scenario", scenario)
+								} else {
+									l.Info("logs are archived into GCS", "scenario", scenario)
+									updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, "", time.Now().String())
+								}
+
 								//TODO: Mark the PtTask as done
 								l.Info("the scenario is done in PtTask", "scenario", scenario)
-								updatePhase(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, "Done")
+								updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, "Done", "")
 								isAllDone--
 							}
 						}
@@ -335,6 +363,49 @@ func checkLocustMaster(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Requ
 	}
 	return false, "", ""
 
+}
+
+// Achive all testing logs to GCS
+func copyFileToGCS(ctx context.Context, src string, bucket string, dst string) error {
+	l := log.FromContext(ctx)
+
+	// Using Cloud Storage API
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		l.Error(err, "unable to create GCS client")
+		return err
+	}
+	defer client.Close()
+
+	// copy all files in the folder to GCS
+	files, err := ioutil.ReadDir(src)
+	if err != nil {
+		l.Error(err, "unable to read local folder", "folder", src)
+		return err
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		srcFile := src + "/" + f.Name()
+		dstFile := dst + "/" + f.Name()
+		l.Info("copying file to GCS", "src", srcFile, "dst", dstFile)
+		fh, err := os.Open(srcFile)
+		if err != nil {
+			l.Error(err, "unable to open local file", "file", srcFile)
+			return err
+		}
+		wc := client.Bucket(bucket).Object(dstFile).NewWriter(ctx)
+		if _, err = io.Copy(wc, fh); err != nil {
+			l.Error(err, "unable to copy file to GCS", "src", srcFile, "dst", dstFile)
+			return err
+		}
+		if err := wc.Close(); err != nil {
+			l.Error(err, "unable to close GCS writer", "src", srcFile, "dst", dstFile)
+			return err
+		}
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

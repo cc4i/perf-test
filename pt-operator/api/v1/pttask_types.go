@@ -41,8 +41,8 @@ type PtTaskSpec struct {
 	// Traffics definition: (scenario name) -> (PtTaskTraffic)
 	Traffics map[string][]PtTaskTraffic `json:"traffics,omitempty"`
 
-	// For local debug
-	LocalDebug PtTaskLocalDebug `json:"localDebug,omitempty"`
+	// Testing output
+	TestingOutput PtTaskTestingOutput `json:"testingOutput"`
 }
 
 // PtTaskExecution defines the execution of a scenario
@@ -98,10 +98,16 @@ type PtTaskTraffic struct {
 	Percent int `json:"percent"`
 }
 
-// For local development
-type PtTaskLocalDebug struct {
+// PtTaskTestingOutput defines the testing output for a scenario
+type PtTaskTestingOutput struct {
+	// Where to store testing logs
+	LogDir string `json:"logDir"`
 	// Testing logs for Locust: locust-workers.ldjson
 	Ldjson string `json:"ldjson,omitempty"`
+	// Testing logs for JMeter: jmeter.jtl
+	Jtl string `json:"jtl,omitempty"`
+	// Archiving GCS bucket
+	Bucket string `json:"bucket"`
 }
 
 // PtTaskStatus defines the observed state of PtTask
@@ -113,6 +119,8 @@ type PtTaskStatus struct {
 	// - "Testing",
 	// - "Done"
 	Phases map[string]string `json:"phase,omitempty"`
+	// Archive for each scenario: (scenario name) -> (archived timestamp)
+	Archives map[string]string `json:"archives,omitempty"`
 	// Each PtTask has an unique Id
 	Id string `json:"id"`
 }

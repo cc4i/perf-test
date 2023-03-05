@@ -99,13 +99,6 @@ spec:
                 description: 'Container images for the scenario: (scenario name) ->
                   (PtTaskImages)'
                 type: object
-              localDebug:
-                description: For local debug
-                properties:
-                  ldjson:
-                    description: 'Testing logs for Locust: locust-workers.ldjson'
-                    type: string
-                type: object
               scenarios:
                 additionalProperties:
                   description: PtTaskScenario defines the scenario
@@ -119,6 +112,25 @@ spec:
                   - script
                   type: object
                 description: (scenario name) -> (PtTaskScenario)
+                type: object
+              testingOutput:
+                description: Testing output
+                properties:
+                  bucket:
+                    description: Archiving GCS bucket
+                    type: string
+                  jtl:
+                    description: 'Testing logs for JMeter: jmeter.jtl'
+                    type: string
+                  ldjson:
+                    description: 'Testing logs for Locust: locust-workers.ldjson'
+                    type: string
+                  logDir:
+                    description: Where to store testing logs
+                    type: string
+                required:
+                - bucket
+                - logDir
                 type: object
               traffics:
                 additionalProperties:
@@ -158,11 +170,18 @@ spec:
             - execution
             - images
             - scenarios
+            - testingOutput
             - type
             type: object
           status:
             description: PtTaskStatus defines the observed state of PtTask
             properties:
+              archives:
+                additionalProperties:
+                  type: string
+                description: 'Archive for each scenario: (scenario name) -> (archived
+                  timestamp)'
+                type: object
               id:
                 description: Each PtTask has an unique Id
                 type: string
