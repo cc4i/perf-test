@@ -207,7 +207,6 @@ func totalVals(m map[string]int) int {
 func MonitorLocustTesting(scenario string, file string) {
 	l := log.Log
 	//TODO:monitor testing result
-	file = "/Users/chuancc/mywork/labs/gtools/perf-test/pt-operator/config/samples/test-example/locust-workers.ldjson"
 	t, err := tail.TailFile(
 		file, tail.Config{Follow: true, ReOpen: true})
 	if err != nil {
@@ -275,6 +274,7 @@ func MonitorLocustLocalWorker(scenario string, ptr *PtTaskReconciler, namespace 
 	rl, _ := labels.NewRequirement("app", selection.Equals, []string{"locust-worker"})
 
 	for {
+		numWorker := 0
 		if err := ptr.List(ctx, &workerPodList, &client.ListOptions{Namespace: namespace, LabelSelector: labels.NewSelector().Add(*rl)}); err != nil {
 			l.Error(err, "failed to list worker pods")
 		} else {
@@ -282,6 +282,7 @@ func MonitorLocustLocalWorker(scenario string, ptr *PtTaskReconciler, namespace 
 				status := 1
 				if pod.Status.Phase == corev1.PodRunning {
 					status = 0
+					numWorker++
 				}
 				if ptMetric, ok := ptTaskMetrics[scenario]; ok {
 					if ptMetric.WorkersStatus == nil {
@@ -297,6 +298,8 @@ func MonitorLocustLocalWorker(scenario string, ptr *PtTaskReconciler, namespace 
 				pttaskWorkersStatus.WithLabelValues(pod.Name, scenario).Set(float64(status))
 			}
 		}
+		pttaskTotalWorkers.WithLabelValues(scenario).Set(float64(numWorker))
+
 		time.Sleep(20 * time.Second)
 	}
 
@@ -308,17 +311,19 @@ func MonitorLocustDistributionWorker(scenario string, workerId string, caText64 
 	ctx := context.Background()
 	name := "locust-worker-" + scenario + "-" + workerId
 	var workerPod corev1.Pod
-	status := 1
+
 	for {
+		numWorker := 0
 		if _, k2c, err := helper.Kube2Client(ctx, caText64, gkeEndpoint); err != nil {
 			l.Error(err, "failed to get kube2client")
 		} else {
 			//Get Pod
+			status := 1
 			if workerPod, err := k2c.CoreV1().Pods("default").Get(ctx, name, metav1.GetOptions{}); err != nil {
 			} else {
-
 				if workerPod.Status.Phase == corev1.PodRunning {
 					status = 0
+					numWorker++
 				}
 			}
 			if ptMetric, ok := ptTaskMetrics[scenario]; ok {
@@ -334,6 +339,8 @@ func MonitorLocustDistributionWorker(scenario string, workerId string, caText64 
 			ptTaskMetrics[scenario].WorkersStatus[workerPod.Name] = status
 			pttaskWorkersStatus.WithLabelValues(scenario, workerPod.Name).Set(float64(status))
 		}
+		pttaskTotalWorkers.WithLabelValues(scenario).Set(float64(numWorker))
+
 		time.Sleep(20 * time.Second)
 	}
 
@@ -344,7 +351,5 @@ func init() {
 	metrics.Registry.MustRegister(pttaskTotalUsers, pttaskTotalReqsPerSec, pttaskTotalErrors,
 		pttaskTotalMasters, pttaskMastersStatus, pttaskTotalWorkers, pttaskWorkersStatus,
 		pttaskAvgResponseTimes)
-
-	// pttaskMastersStatus.WithLabelValues("chuan").Set(float64(0))
 
 }

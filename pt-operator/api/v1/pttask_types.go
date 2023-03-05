@@ -40,8 +40,12 @@ type PtTaskSpec struct {
 
 	// Traffics definition: (scenario name) -> (PtTaskTraffic)
 	Traffics map[string][]PtTaskTraffic `json:"traffics,omitempty"`
+
+	// For local debug
+	LocalDebug PtTaskLocalDebug `json:"localDebug,omitempty"`
 }
 
+// PtTaskExecution defines the execution of a scenario
 type PtTaskExecution struct {
 	// Executor type: locust, jmeter, etc from https://gettaurus.org/docs/Executors/
 	//+kubebuilder:default:=locust
@@ -66,6 +70,13 @@ type PtTaskExecution struct {
 	Workers int `json:"workers,omitempty"`
 }
 
+// PtTaskScenario defines the scenario
+type PtTaskScenario struct {
+	DefaultAddress string `json:"default-address"`
+	Script         string `json:"script"`
+}
+
+// PtTaskImages defines the images for a scenario
 type PtTaskImages struct {
 	// The image for master node
 	MasterImage string `json:"masterImage"`
@@ -73,12 +84,7 @@ type PtTaskImages struct {
 	WorkerImage string `json:"workerImage"`
 }
 
-type PtTaskScenario struct {
-	DefaultAddress string `json:"default-address"`
-	Script         string `json:"script"`
-}
-
-// How traffic would be spread across GKE cluster,
+// PtTaskTraffic defines the traffic for a scenario
 type PtTaskTraffic struct {
 	// Base64 key for service account
 	SAKey64 string `json:"saKey64,omitempty"`
@@ -90,6 +96,12 @@ type PtTaskTraffic struct {
 	Region string `json:"region"`
 	// The percentage for traffic: currency * precent/100
 	Percent int `json:"percent"`
+}
+
+// For local development
+type PtTaskLocalDebug struct {
+	// Testing logs for Locust: locust-workers.ldjson
+	Ldjson string `json:"ldjson,omitempty"`
 }
 
 // PtTaskStatus defines the observed state of PtTask

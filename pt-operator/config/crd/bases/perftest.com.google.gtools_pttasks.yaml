@@ -38,6 +38,7 @@ spec:
               execution:
                 description: Execution for different scenarios
                 items:
+                  description: PtTaskExecution defines the execution of a scenario
                   properties:
                     concurrency:
                       description: The number of target concurrent virtual users
@@ -83,6 +84,7 @@ spec:
                 type: array
               images:
                 additionalProperties:
+                  description: PtTaskImages defines the images for a scenario
                   properties:
                     masterImage:
                       description: The image for master node
@@ -97,8 +99,16 @@ spec:
                 description: 'Container images for the scenario: (scenario name) ->
                   (PtTaskImages)'
                 type: object
+              localDebug:
+                description: For local debug
+                properties:
+                  ldjson:
+                    description: 'Testing logs for Locust: locust-workers.ldjson'
+                    type: string
+                type: object
               scenarios:
                 additionalProperties:
+                  description: PtTaskScenario defines the scenario
                   properties:
                     default-address:
                       type: string
@@ -113,7 +123,7 @@ spec:
               traffics:
                 additionalProperties:
                   items:
-                    description: How traffic would be spread across GKE cluster,
+                    description: PtTaskTraffic defines the traffic for a scenario
                     properties:
                       gkeCA64:
                         description: Base64 CA acertificate

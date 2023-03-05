@@ -26,3 +26,5 @@ spec:
     test-example:
       masterImage: asia-docker.pkg.dev/play-api-service/test-images/taurus-base
       workerImage: asia-docker.pkg.dev/play-api-service/test-images/locust-worker
+  localDebug:
+    ldjson: ./config/samples/locust-workers.ldjson
