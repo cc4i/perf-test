@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+
+import "google/protobuf/timestamp.proto";
+
+option go_package="/api";
+
+// Task type
+enum PtTaskType {
+    // Local task type
+    LOCAL = 0;
+
+    // Distribution task type
+    DISTRIBUTION = 1;
+
+}
+
+// Task status
+enum PtTaskStatus {
+    // Task is pending
+    PENDING = 0;
+
+    // Task is provisioned
+    PROVISIONED = 1;
+
+    // Task is running
+    RUNNING = 2;
+
+    // Task is finished
+    FINISHED = 3;
+
+    // Task is failed
+    FAILED = 4;
+
+}
+
+// Traffic for the task
+message PtTaskTracffic {
+    // Region for the traffic
+    string region = 1;
+
+    // Percent for the traffic
+    int32 pecent = 2;
+}
+
+// Scripts for the task
+message PtTaskScript {
+    // Script name
+    string name = 1;
+    // Script type: file, zip, gz, tar, etc; "file is default"
+    optional string type = 2;
+
+    // Script content
+    bytes data = 3;
+}
+
+// Task for performance test
+message PtTask {
+    // Total users to be stimulated in test
+    int32 total_users = 1;
+    // Duration for test
+    int32 duration = 2;
+    // Ramp up time for test
+    int32 ramp_up = 3;
+
+    // Task type for perforamnce test: Local, or Distribution
+    PtTaskType type = 4;
+
+    // Traffics arragement
+    repeated PtTaskTracffic traffics = 10;
+}
+
+// Launched Task for performance test with status and links
+message PtLaunchedTask {
+    // Task id
+    string id = 1;
+    // Task
+    PtTask task = 2;
+    // Task status
+    PtTaskStatus status = 3;
+
+    // Created time
+    google.protobuf.Timestamp created = 6;
+
+    // Finished time
+    google.protobuf.Timestamp finished = 7;
+
+    // last updated time
+    google.protobuf.Timestamp last_updated = 8;
+
+    // Link to metrics dashboard
+    string metrics_link = 10;
+    // Link to logs
+    string logs_link = 11;
+    // Link to download the test results
+    string download_link = 12;
+}
+
+// Task list for performance test
+message PtTaskList {
+    // Task to be created
+    repeated PtLaunchedTask launched_tasks = 1;
+}
+
+

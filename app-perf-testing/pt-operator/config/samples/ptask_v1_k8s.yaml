@@ -1,0 +1,31 @@
+apiVersion: perftest.com.google.gtools/v1
+kind: PtTask
+metadata:
+  labels:
+    app.kubernetes.io/name: pttask
+    app.kubernetes.io/instance: pttask-k8s
+    app.kubernetes.io/part-of: pt-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: pt-operator
+  name: pttask-k8s
+spec:
+  type: Local
+  execution:
+    - executor: locust
+      concurrency: 100
+      ramp-up: 10s
+      hold-for: 5m
+      master: True
+      workers: 1
+      scenario: test-on-k8s
+  scenarios:
+    test-on-k8s:
+      default-address: http://blazedemo.com
+      script: locustfile.py
+  images:
+    test-on-k8s:
+      masterImage: asia-docker.pkg.dev/play-api-service/test-images/taurus-base
+      workerImage: asia-docker.pkg.dev/play-api-service/test-images/locust-worker
+  testingOutput:
+    logDir: /taurus-logs
+    bucket: perf-test-achive-cc
