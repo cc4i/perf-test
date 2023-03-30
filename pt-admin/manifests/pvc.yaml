@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pt-system
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: bzt-filestore-pvc
+  namespace: pt-system
+spec:
+  accessModes:
+  - ReadWriteMany
+  storageClassName: bzt-filestore-sc
+  resources:
+    requests:
+      storage: 1Ti

@@ -12,35 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1
-
-import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+package api
 
 // PtTaskSpec defines the desired state of PtTask
 type PtTaskSpec struct {
 	// Task type
 	//+kubebuilder:default:=Local
 	//+kubebuilder:validation:Enum:=Local;Distribution
-	Type string `json:"type"`
+	Type string `yaml:"type"`
 
 	// Execution for different scenarios
-	Execution []PtTaskExecution `json:"execution"`
+	Execution []PtTaskExecution `yaml:"execution"`
 	// (scenario name) -> (PtTaskScenario)
-	Scenarios map[string]PtTaskScenario `json:"scenarios"`
+	Scenarios map[string]PtTaskScenario `yaml:"scenarios"`
 
 	// Container images for the scenario: (scenario name) -> (PtTaskImages)
-	Images map[string]PtTaskImages `json:"images"`
+	Images map[string]PtTaskImages `yaml:"images"`
 
 	// Traffics definition: (scenario name) -> (PtTaskTraffic)
-	Traffics map[string][]PtTaskTraffic `json:"traffics,omitempty"`
+	Traffics map[string][]PtTaskTraffic `yaml:"traffics,omitempty"`
 
 	// Testing output
-	TestingOutput PtTaskTestingOutput `json:"testingOutput"`
+	TestingOutput PtTaskTestingOutput `yaml:"testingOutput"`
 }
 
 // PtTaskExecution defines the execution of a scenario
@@ -48,64 +41,64 @@ type PtTaskExecution struct {
 	// Executor type: locust, jmeter, etc from https://gettaurus.org/docs/Executors/
 	//+kubebuilder:default:=locust
 	//+kubebuilder:validation:Enum:=locust;jmeter
-	Executor string `json:"executor"`
+	Executor string `yaml:"executor"`
 	// The number of target concurrent virtual users
-	Concurrency int `json:"concurrency"`
+	Concurrency int `yaml:"concurrency"`
 	// Time to hold target concurrency
-	HoldFor string `json:"hold-for"`
+	HoldFor string `yaml:"hold-for"`
 	// Ramp-up time to reach target concurrency
-	RampUp string `json:"ramp-up"`
+	RampUp string `yaml:"ramp-up"`
 	// Limit scenario iterations number
-	Iterations int `json:"iterations,omitempty"`
+	Iterations int `yaml:"iterations,omitempty"`
 	// The name of scenario that described in scenarios part
-	Scenario string `json:"scenario"`
+	Scenario string `yaml:"scenario"`
 	// Is master or not
 	//+kubebuilder:default:=true
 	//+kubebuilder:validation:Enum:=true;false
-	Master bool `json:"master,omitempty"`
+	Master bool `yaml:"master,omitempty"`
 	// Numbers of workers, calculated if not specified
 	//+kubebuilder:validation:Minimum=1
-	Workers int `json:"workers,omitempty"`
+	Workers int `yaml:"workers,omitempty"`
 }
 
 // PtTaskScenario defines the scenario
 type PtTaskScenario struct {
-	DefaultAddress string `json:"default-address"`
-	Script         string `json:"script"`
+	DefaultAddress string `yaml:"default-address"`
+	Script         string `yaml:"script"`
 }
 
 // PtTaskImages defines the images for a scenario
 type PtTaskImages struct {
 	// The image for master node
-	MasterImage string `json:"masterImage"`
+	MasterImage string `yaml:"masterImage"`
 	// The image for worker node
-	WorkerImage string `json:"workerImage"`
+	WorkerImage string `yaml:"workerImage"`
 }
 
 // PtTaskTraffic defines the traffic for a scenario
 type PtTaskTraffic struct {
 	// Base64 key for service account
-	SAKey64 string `json:"saKey64,omitempty"`
+	SAKey64 string `yaml:"saKey64,omitempty"`
 	// Base64 CA acertificate
-	GKECA64 string `json:"gkeCA64,omitempty"`
+	GKECA64 string `yaml:"gkeCA64,omitempty"`
 	// External endpoint for GKE
-	GKEEndpoint string `json:"gkeEndpoint,omitempty"`
+	GKEEndpoint string `yaml:"gkeEndpoint,omitempty"`
 	// The region where GKE cluster is provisioned
-	Region string `json:"region"`
+	Region string `yaml:"region"`
 	// The percentage for traffic: currency * precent/100
-	Percent int `json:"percent"`
+	Percent int `yaml:"percent"`
 }
 
 // PtTaskTestingOutput defines the testing output for a scenario
 type PtTaskTestingOutput struct {
 	// Where to store testing logs
-	LogDir string `json:"logDir"`
+	LogDir string `yaml:"logDir,omitempty"`
 	// Testing logs for Locust: locust-workers.ldjson
-	Ldjson string `json:"ldjson,omitempty"`
+	Ldjson string `yaml:"ldjson,omitempty"`
 	// Testing logs for JMeter: jmeter.jtl
-	Jtl string `json:"jtl,omitempty"`
+	Jtl string `yaml:"jtl,omitempty"`
 	// Archiving GCS bucket
-	Bucket string `json:"bucket"`
+	Bucket string `yaml:"bucket"`
 }
 
 // PtTaskStatus defines the observed state of PtTask
@@ -116,34 +109,23 @@ type PtTaskStatus struct {
 	// - "ProvisionWorker",
 	// - "Testing",
 	// - "Done"
-	Phases map[string]string `json:"phase,omitempty"`
+	Phases map[string]string `yaml:"phase,omitempty"`
 	// Archive for each scenario: (scenario name) -> (archived timestamp)
-	Archives map[string]string `json:"archives,omitempty"`
+	Archives map[string]string `yaml:"archives,omitempty"`
 	// Each PtTask has an unique Id
-	Id string `json:"id"`
+	Id string `yaml:"id"`
 }
-
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
 
 // PtTask is the Schema for the pttasks API
 type PtTask struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   PtTaskSpec   `json:"spec,omitempty"`
-	Status PtTaskStatus `json:"status,omitempty"`
+	Kind       string       `yaml:"kind,omitempty"`
+	APIVersion string       `yaml:"apiVersion,omitempty"`
+	Metadata   MyObjectMeta `yaml:"metadata,omitempty"`
+	Spec       PtTaskSpec   `yaml:"spec,omitempty"`
+	Status     PtTaskStatus `yaml:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-
-// PtTaskList contains a list of PtTask
-type PtTaskList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []PtTask `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&PtTask{}, &PtTaskList{})
+type MyObjectMeta struct {
+	Name      string `yaml:"name,omitempty"`
+	Namespace string `yaml:"namespace,omitempty"`
 }

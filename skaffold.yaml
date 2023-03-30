@@ -13,23 +13,29 @@ build:
     context: taurus
     docker:
       dockerfile: Dockerfile
-  #   requires:
-  #     - image: asia-docker.pkg.dev/play-api-service/test-images/taurus
-  #       alias: v1
-  # - image: asia-docker.pkg.dev/play-api-service/test-images/taurus
-  #   context: taurus
-  #   docker:
-  #     dockerfile: Dockerfile.taurus
+  - image: asia-docker.pkg.dev/play-api-service/test-images/pt-admin
+    context: pt-admin
+    docker:
+      dockerfile: Dockerfile
+
 manifests:
   kustomize:
     paths:
-    - test-operator/config/crd
+    - pt-operator/config/crd
+  rawYaml: 
+    - pt-admin/cloudrun-service.yaml
+
+deploy:
+  cloudrun:
+    projectid: play-api-service
+    region: asia-northeast1
+
 profiles:
 - name: default
   manifests:
     kustomize:
       paths:
-      - test-operator/config/default
+      - pt-operator/config/default
 - name: manager
   manifests:
     kustomize:
@@ -39,7 +45,7 @@ profiles:
   manifests:
     kustomize:
       paths:
-      - test-operator/config/prometheus
+      - pt-operator/config/prometheus
 - name: rbac
   manifests:
     kustomize:

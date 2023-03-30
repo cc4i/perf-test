@@ -1,23 +1,22 @@
-/*
-Copyright 2023.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package controller
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -52,6 +51,8 @@ type PtTaskReconciler struct {
 //+kubebuilder:rbac:groups=perftest.com.google.gtools,resources=pttasks,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=perftest.com.google.gtools,resources=pttasks/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=perftest.com.google.gtools,resources=pttasks/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -83,18 +84,23 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			switch xe.Executor {
 			case "locust":
 				l.Info("Provisioning for Locust")
-				trsConf, _ := yaml.Marshal(pTask.Spec)
-				// l.Info("BO:")
-				l.Info(string(trsConf))
-				// l.Info("EO:")
-				if ph, err := do4Locust(ctx, r, req, &pTask, xe.Scenario, xe.Workers); err != nil {
-					l.Error(err, "failed to provision/execute Locust", "phase", ph)
-					updateStatus(ctx, r, xe.Scenario, req.NamespacedName, ph, "")
-					return ctrl.Result{}, err
-				} else {
-					updateStatus(ctx, r, xe.Scenario, req.NamespacedName, ph, "")
-				}
-				l.Info("Provisioning was finished")
+				go func(sxe perftestv1.PtTaskExecution) {
+					l.Info("Provisioning for Locust", "scenario", sxe.Scenario, "workers", sxe.Workers)
+					trsConf, _ := yaml.Marshal(pTask.Spec)
+					// l.Info("BO:")
+					l.Info(string(trsConf))
+					// l.Info("EO:")
+					if !(pTask.Status.Phases != nil && pTask.Status.Phases[sxe.Scenario] == "Done") {
+						if ph, err := do4Locust(ctx, r, req, &pTask, sxe.Scenario, sxe.Workers); err != nil {
+							l.Error(err, "failed to provision/execute Locust", "phase", ph)
+							updateStatus(ctx, r, sxe.Scenario, req.NamespacedName, ph, "")
+						} else {
+							updateStatus(ctx, r, sxe.Scenario, req.NamespacedName, ph, "")
+						}
+						l.Info("Provisioning for Locust is done", "scenario", sxe.Scenario, "workers", sxe.Workers)
+					}
+				}(xe)
+
 			case "jmeter":
 				l.Info("Provisioning for JMeter")
 			default:
@@ -109,7 +115,7 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 // Update the status of PtTask, including phase and archive
 func updateStatus(ctx context.Context, r *PtTaskReconciler, scenario string, nn types.NamespacedName, ph string, arch string) error {
 	l := log.FromContext(ctx)
-	l.Info("Update status of PtTask", "scenario", scenario)
+	l.Info("Update status of PtTask", "scenario", scenario, "ph", ph, "arch", arch)
 	var pTask perftestv1.PtTask
 	if err := r.Get(ctx, nn, &pTask); err != nil {
 		l.Error(err, "unable to fetch PtTask", "name", nn.Name, "namespace", nn.Namespace)
@@ -118,7 +124,7 @@ func updateStatus(ctx context.Context, r *PtTaskReconciler, scenario string, nn 
 	if pTask.Status.Phases == nil && ph != "" {
 		pTask.Status.Phases = make(map[string]string)
 	}
-	if pTask.Status.Archives == nil && ph != "" {
+	if pTask.Status.Archives == nil && arch != "" {
 		pTask.Status.Archives = make(map[string]string)
 	}
 	if ph != "" {
@@ -151,6 +157,8 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	}
 	var xMp = corev1.Pod{}
 	if err := ptr.Get(ctx, mpNN, &xMp); err != nil {
+		l.Info("master pod wasn't existed", "name", mp.Name, "namespace", mp.Namespace)
+		l.Info("Create master pod", "name", mp.Name, "namespace", mp.Namespace)
 		if err := ctrl.SetControllerReference(pTask, mp, ptr.Scheme); err != nil {
 			l.Error(err, "unable to set OwnerReferences to master pod", "name", mp.Name, "namespace", mp.Namespace)
 			return phase, err
@@ -176,6 +184,8 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	}
 	var xMs = corev1.Service{}
 	if err := ptr.Get(ctx, msNN, &xMs); err != nil {
+		l.Info("master svc wasn't existed", "name", ms.Name, "namespace", ms.Namespace)
+		l.Info("Create master svc", "name", ms.Name, "namespace", ms.Namespace)
 		if err := ctrl.SetControllerReference(pTask, ms, ptr.Scheme); err != nil {
 			l.Error(err, "unable to set OwnerReferences to master service", "name", ms.Name, "namespace", ms.Namespace)
 			return phase, err
@@ -192,13 +202,18 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	svcHost := ""
 	svcPort := ""
 	isReady := false
-	for {
+	// Check if the master service is ready: max 100 times, 5 seconds per time
+	for int := 0; int < 100; int++ {
 		isReady, svcHost, svcPort = checkLocustMaster(ctx, ptr, req, mpNN, msNN)
 		if !isReady {
 			time.Sleep(5 * time.Second)
 		} else {
 			break
 		}
+	}
+	if !isReady {
+		l.Error(errors.New("master service for Locust is not ready"), "failed to create master service")
+		return phase, errors.New("master service for Locust is not ready")
 	}
 	l.Info("master service for Locust is ready", "host", svcHost, "port", svcPort)
 	go MonitorLocustMaster(scenario, ptr, mpNN)
@@ -216,6 +231,8 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 			}
 			if err := ptr.Get(ctx, workerNN, &corev1.Pod{}); err != nil {
 				l.Info("Provision workers in the same cluster")
+				l.Info("worker pod wasn't existed", "name", worker.Name, "namespace", worker.Namespace)
+				l.Info("Create worker pod", "name", worker.Name, "namespace", worker.Namespace)
 				if err := ctrl.SetControllerReference(pTask, worker, ptr.Scheme); err != nil {
 					l.Error(err, "unable to set OwnerReferences to worker pod", "name", worker.Name, "namespace", worker.Namespace)
 					return phase, err
@@ -262,7 +279,7 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 		}
 	}
 
-	// TODO: 5. Kick off monitoring and keep update along the way
+	// 5. Kick off monitoring and keep update along the way
 	// 5.1 Checking out testing kicked off
 	// 5.2 Starting to aggreagete metrics
 	phase = "Testing"
@@ -271,8 +288,9 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 		l.Info("local debug mode", "ldjson", pTask.Spec.TestingOutput.Ldjson)
 		go MonitorLocustTesting(scenario, pTask.Spec.TestingOutput.Ldjson)
 	} else {
-		l.Info("monitoring testing logs", "ldjson", "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
-		go MonitorLocustTesting(scenario, "/taurus-logs/"+pTask.Status.Id+"/"+scenario)
+		ldjson := "/taurus-logs/" + pTask.Status.Id + "/" + scenario + "/locust-workers.ldjson"
+		l.Info("monitoring testing logs", "ldjson", ldjson)
+		go MonitorLocustTesting(scenario, ldjson)
 	}
 
 	// TODO: 6. House keeping after testing
@@ -280,21 +298,22 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	// 6.2 Achieving logs/reports
 	// 6.3 Mark PtTask was done
 	// 6.4 Singal to clean up all related resources except metadata store & GCS
-	go checkMasterStatus(ctx, ptr, pTask)
+	go checkMasterStatus(ptr, pTask)
 
 	return phase, nil
 }
 
-func checkMasterStatus(ctx context.Context, ptr *PtTaskReconciler, pTask *perftestv1.PtTask) {
-	l := log.FromContext(ctx)
+func checkMasterStatus(ptr *PtTaskReconciler, pTask *perftestv1.PtTask) {
+	ctx := context.Background()
+	l := log.Log.WithName("checkMasterStatus")
 	for {
-		time.Sleep(5 * time.Second)
 		var pods corev1.PodList
 		rl, _ := labels.NewRequirement("app", selection.Equals, []string{"locust-master"})
 		if err := ptr.List(ctx, &pods, &client.ListOptions{Namespace: pTask.Namespace, LabelSelector: labels.NewSelector().Add(*rl)}); err != nil {
 			l.Error(err, "unable to list pods in namespace", "namespace", pTask.Namespace)
 		} else {
 			isAllDone := len(pods.Items)
+			l.Info("check the number of locust master", "count", isAllDone)
 			for _, p := range pods.Items {
 				for _, st := range p.Status.ContainerStatuses {
 					if strings.Contains(st.Name, "locust-master") {
@@ -310,16 +329,20 @@ func checkMasterStatus(ctx context.Context, ptr *PtTaskReconciler, pTask *perfte
 									continue
 								}
 								l.Info("archive logs into GCS", "scenario", scenario)
-								if err := copyFileToGCS(ctx, pTask.Spec.TestingOutput.LogDir, pTask.Spec.TestingOutput.Bucket, pTask.Status.Id+"/"+scenario); err != nil {
+								src := "/taurus-logs/" + pTask.Status.Id + "/" + scenario
+								dst := pTask.Status.Id + "/" + scenario
+								if pTask.Spec.TestingOutput.LogDir != "/taurus-logs" {
+									src = pTask.Spec.TestingOutput.LogDir
+								}
+								if err := copyFileToGCS(ctx, src, pTask.Spec.TestingOutput.Bucket, dst); err != nil {
 									l.Error(err, "unable to copy logs into GCS", "scenario", scenario)
 								} else {
 									l.Info("logs are archived into GCS", "scenario", scenario)
-									updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, "", time.Now().String())
 								}
 
 								//TODO: Mark the PtTask as done
 								l.Info("the scenario is done in PtTask", "scenario", scenario)
-								updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, "Done", "")
+								updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, "Done", time.Now().String())
 								isAllDone--
 							}
 						}
@@ -329,6 +352,7 @@ func checkMasterStatus(ctx context.Context, ptr *PtTaskReconciler, pTask *perfte
 			if isAllDone == 0 {
 				//TODO: Singal to clean up all related resources except metadata store & GCS
 				l.Info("singal to clean up all related resources")
+				break
 			}
 		}
 		time.Sleep(20 * time.Second)
@@ -368,7 +392,7 @@ func checkLocustMaster(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Requ
 // Achive all testing logs to GCS
 func copyFileToGCS(ctx context.Context, src string, bucket string, dst string) error {
 	l := log.FromContext(ctx)
-
+	l.Info("copying files to GCS", "src", src, "bucket", bucket, "dst", dst)
 	// Using Cloud Storage API
 	client, err := storage.NewClient(ctx)
 	if err != nil {

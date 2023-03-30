@@ -1,5 +1,0 @@
-## Append samples of your project ##
-resources:
-- perftest_v1_pttask.yaml
-- perftest_v1_ptworker.yaml
-#+kubebuilder:scaffold:manifestskustomizesamples

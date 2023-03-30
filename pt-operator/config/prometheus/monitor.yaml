@@ -1,7 +1,7 @@
 
 # Prometheus Monitor Service (Metrics)
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
 metadata:
   labels:
     control-plane: controller-manager
@@ -15,12 +15,8 @@ metadata:
   namespace: system
 spec:
   endpoints:
-    - path: /metrics
-      port: https
-      scheme: https
-      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-      tlsConfig:
-        insecureSkipVerify: true
+  - port: metrics
+    interval: 15s
   selector:
     matchLabels:
       control-plane: controller-manager

@@ -1,5 +1,5 @@
 # Adds namespace to all resources.
-namespace: pt-operator-system
+namespace: pt-system
 
 # Value of this field is prepended to the
 # names of all resources, e.g. a deployment named
@@ -24,13 +24,13 @@ resources:
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER'. 'WEBHOOK' components are required.
 #- ../certmanager
 # [PROMETHEUS] To enable prometheus monitor, uncomment all sections with 'PROMETHEUS'.
-#- ../prometheus
+- ../prometheus
 
-patchesStrategicMerge:
+# patchesStrategicMerge:
 # Protect the /metrics endpoint by putting it behind auth.
 # If you want your controller-manager to expose the /metrics
 # endpoint w/o any authn/z, please comment the following line.
-- manager_auth_proxy_patch.yaml
+# - manager_auth_proxy_patch.yaml
 
 
 
