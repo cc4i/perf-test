@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,9 @@ import (
 	cloudbuild "cloud.google.com/go/cloudbuild/apiv1/v2"
 	cloudbuildpb "cloud.google.com/go/cloudbuild/apiv1/v2/cloudbuildpb"
 	"cloud.google.com/go/container/apiv1/containerpb"
+
+	// dashboard "cloud.google.com/go/monitoring/dashboard/apiv1"
+	// dashboardpb "cloud.google.com/go/monitoring/dashboard/apiv1/dashboardpb"
 	"cloud.google.com/go/storage"
 	wfexecpb "cloud.google.com/go/workflows/executions/apiv1/executionspb"
 	"com.google.gtools/pt-admin/api"
@@ -26,6 +30,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"golang.org/x/oauth2"
+	auth "golang.org/x/oauth2/google"
 )
 
 type ProvisionWf struct {
@@ -282,7 +289,7 @@ func ApplyManifest(ctx context.Context, c *gin.Context) error {
 	}
 
 	if file == "pt-operator.yaml" || file == "sc.yaml" {
-		nfile, err := replaceEnvs(ctx, file, gke.AccountId, gke.ProjectId, gke.Network)
+		nfile, err := replaceEnvs(ctx, file, gke.AccountId, gke.ProjectId, gke.Network, "")
 		if err != nil {
 			l.Error(err, "replaceEnvs", "file", file)
 			return err
@@ -316,16 +323,26 @@ func BindingWorkloadIdentity(ctx context.Context, c *gin.Context) error {
 
 }
 
-func replaceEnvs(ctx context.Context, file string, sa string, projectId string, network string) (string, error) {
-	l := log.FromContext(ctx).WithName("ApplyManifest")
+func replaceEnvs(ctx context.Context, file, sa, projectId, network, ptName string) (string, error) {
+	l := log.FromContext(ctx).WithName("replaceEnvs")
 	buf, err := ioutil.ReadFile("/manifests/" + file)
 	if err != nil {
 		l.Error(err, "ReadFile")
 		return "", err
 	}
-	newContents := strings.Replace(string(buf), "${SA_NAME}", sa, -1)
-	newContents = strings.Replace(newContents, "${PROJECT_ID}", projectId, -1)
-	newContents = strings.Replace(newContents, "${NETWORK}", network, -1)
+	newContents := string(buf)
+	if sa != "" {
+		newContents = strings.Replace(newContents, "${SA_NAME}", sa, -1)
+	}
+	if projectId != "" {
+		newContents = strings.Replace(newContents, "${PROJECT_ID}", projectId, -1)
+	}
+	if network != "" {
+		newContents = strings.Replace(newContents, "${NETWORK}", network, -1)
+	}
+	if ptName != "" {
+		newContents = strings.Replace(newContents, "${PT_TASK_NAME}", ptName, -1)
+	}
 
 	// TODO: It's a specific path "/var/tmp/" for Cloud Run
 	out := "/var/tmp/" + file + "-" + strconv.FormatInt(time.Now().UnixNano(), 10) + ".yaml"
@@ -392,10 +409,12 @@ func GetPtOperatorStatus(ctx context.Context, c *gin.Context) (map[string]string
 
 }
 
+// Execute the workflow to provision all related resources and apply PtTask to run a Performance Test
 func ExecWorkflow(ctx context.Context, c *gin.Context) (*wfexecpb.Execution, error) {
 	l := log.FromContext(ctx).WithName("ExecWorkflow")
 	ti := &helper.TInfra{}
 	var pwf ProvisionWf
+	// The name of the workflow to be executed
 	wf := c.Param("wf")
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -407,7 +426,25 @@ func ExecWorkflow(ctx context.Context, c *gin.Context) (*wfexecpb.Execution, err
 		l.Error(err, "json.Unmarshal", "buf", string(buf))
 		return &wfexecpb.Execution{}, err
 	}
-	return ti.ExecWorkflow(ctx, pwf.ProjectId, pwf.Region, wf, string(buf))
+	ex, err := ti.ExecWorkflow(ctx, pwf.ProjectId, pwf.Region, wf, string(buf))
+	if err != nil {
+		l.Error(err, "ti.ExecWorkflow")
+		return &wfexecpb.Execution{}, err
+	}
+	l.Info("ExecWorkflow", "startTime", ex.StartTime.String())
+
+	// Save executionId to Firestore
+	_, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
+		Id:             ex.Name,
+		WorkflowName:   wf,
+		Input:          pwf,
+		StatusWorkflow: ex.State.String(),
+	})
+	if err != nil {
+		l.Error(err, "failed to insert PtTransaction to Firestore")
+		// return ex, err
+	}
+	return ex, nil
 
 }
 
@@ -424,8 +461,88 @@ func StatusWorkflow(ctx context.Context, c *gin.Context) (map[string]string, err
 
 }
 
+func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
+	l := log.FromContext(ctx).WithName("CreateDashboard")
+	dId := ""
+	projectId := c.Param("projectId")
+	executionId := c.Param("executionId")
+	var token *oauth2.Token
+	url := "https://monitoring.googleapis.com/v1/projects/" + projectId + "/dashboards"
+	scopes := []string{
+		url,
+	}
+	if credentials, err := auth.FindDefaultCredentials(ctx, scopes...); err == nil {
+		token, err = credentials.TokenSource.Token()
+		if err != nil {
+			l.Error(err, "credentials.TokenSource.Token")
+			return dId, err
+		}
+	}
+
+	// curl -d @my-dashboard.json
+	// -H "Authorization: Bearer $(gcloud auth print-access-token)"
+	// -H 'Content-Type: application/json'
+	// -X POST https://monitoring.googleapis.com/v1/projects/${PROJECT_ID}/dashboards
+	// net/http post
+	dFile, err := replaceEnvs(ctx, "dashboard.json", "", "", "", executionId)
+	if err != nil {
+		l.Error(err, "replaceEnvs")
+		return dId, err
+	}
+	dash, err := ioutil.ReadFile(dFile)
+	if err != nil {
+		l.Error(err, "ioutil.ReadFile")
+		return dId, err
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(dash))
+	if err != nil {
+		l.Error(err, "http.NewRequest")
+		return dId, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	//eg: https://console.cloud.google.com/monitoring/dashboards/builder/db50a4bf-ae14-441f-812d-b01ea471ab42?project=play-api-service
+	if err != nil {
+		l.Error(err, "client.Do")
+		return dId, err
+	}
+	defer resp.Body.Close()
+	l.Info("response Status:", "status", resp.Status)
+	buf, err := io.ReadAll(resp.Body)
+	if err != nil {
+		l.Error(err, "io.ReadAll")
+		return dId, err
+	}
+	// json, cloud be map style
+	var mp map[string]interface{}
+	err = json.Unmarshal(buf, &mp)
+	if err != nil {
+		l.Error(err, "json.Unmarshal", "buf", string(buf))
+		return dId, err
+	}
+	//"name": "projects/374299782509/dashboards/fd877f39-6505-4788-86b8-89b49bf43d4a"
+	if mp["name"] != nil {
+		dName := strings.Split(fmt.Sprintf("%v", mp["name"]), "/")
+		dId = dName[len(dName)-1]
+		l.Info("Dashboard created", "id", dId)
+
+	}
+	// Dashboard URL
+	dUrl := "https://console.cloud.google.com/monitoring/dashboards/builder/" + dId + "?project=" + projectId
+
+	// Save dashboard URL to Firestore
+	_, err = helper.UpdateDashboardUrl(ctx, projectId, "pt-transactions", executionId, dUrl)
+	if err != nil {
+		l.Error(err, "failed to update dashboardUrl to Firestore")
+	}
+	return dUrl, nil
+}
+
 func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, error) {
 	l := log.FromContext(ctx).WithName("PreparePtTask")
+	executionId := c.Param("executionId")
 	var input ProvisionWf
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -535,6 +652,11 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 		}
 	}
 
+	// Save PtTask to Firestore
+	_, err = helper.UpdatePtTask(ctx, tr.ProjectId, "pt-transactions", executionId, *pt)
+	if err != nil {
+		l.Error(err, "failed to update PtTask to Firestore")
+	}
 	return pt, nil
 }
 

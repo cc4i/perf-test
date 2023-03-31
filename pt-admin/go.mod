@@ -6,7 +6,9 @@ require (
 	cloud.google.com/go/cloudbuild v1.7.0
 	cloud.google.com/go/compute v1.18.0
 	cloud.google.com/go/container v1.13.1
+	cloud.google.com/go/firestore v1.9.0
 	cloud.google.com/go/iam v0.12.0
+	cloud.google.com/go/monitoring v1.12.0
 	cloud.google.com/go/storage v1.30.1
 	cloud.google.com/go/workflows v1.10.0
 	github.com/gin-gonic/gin v1.9.0
@@ -66,6 +68,7 @@ require (
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/net v0.8.0 // indirect
+	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/term v0.6.0 // indirect
 	golang.org/x/text v0.8.0 // indirect

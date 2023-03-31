@@ -1,0 +1,179 @@
+{
+  "displayName": "Performance Testing - ${PT_TASK_NAME}",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "height": 2,
+        "widget": {
+          "scorecard": {
+            "gaugeView": {
+              "upperBound": 50.0
+            },
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "aggregation": {
+                  "alignmentPeriod": "60s",
+                  "crossSeriesReducer": "REDUCE_MAX",
+                  "perSeriesAligner": "ALIGN_MAX"
+                },
+                "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_workers/gauge\" resource.type=\"prometheus_target\""
+              }
+            }
+          },
+          "title": "Total Workers"
+        },
+        "width": 4,
+        "yPos": 4
+      },
+      {
+        "height": 4,
+        "widget": {
+          "title": "Average Response Time",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "minAlignmentPeriod": "60s",
+                "plotType": "LINE",
+                "targetAxis": "Y1",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN"
+                    },
+                    "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_avg_response_time/gauge\" resource.type=\"prometheus_target\"",
+                    "secondaryAggregation": {
+                      "alignmentPeriod": "60s"
+                    }
+                  }
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "y1Axis",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "width": 12,
+        "yPos": 6
+      },
+      {
+        "height": 2,
+        "widget": {
+          "scorecard": {
+            "gaugeView": {
+              "upperBound": 1000.0
+            },
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "aggregation": {
+                  "alignmentPeriod": "60s",
+                  "crossSeriesReducer": "REDUCE_MAX",
+                  "perSeriesAligner": "ALIGN_MAX"
+                },
+                "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_request_per_sec/gauge\" resource.type=\"prometheus_target\""
+              }
+            }
+          },
+          "title": "RPS"
+        },
+        "width": 4,
+        "xPos": 4,
+        "yPos": 4
+      },
+      {
+        "height": 4,
+        "widget": {
+          "title": "Total Users",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "minAlignmentPeriod": "60s",
+                "plotType": "LINE",
+                "targetAxis": "Y1",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN"
+                    },
+                    "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_users/gauge\" resource.type=\"prometheus_target\"",
+                    "secondaryAggregation": {
+                      "alignmentPeriod": "60s"
+                    }
+                  }
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "y1Axis",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "width": 6
+      },
+      {
+        "height": 4,
+        "widget": {
+          "title": "Total Errors",
+          "xyChart": {
+            "chartOptions": {
+              "mode": "COLOR"
+            },
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "targetAxis": "Y1",
+                "timeSeriesQuery": {
+                  "prometheusQuery": "gtools_perftest_pttask_total_errors"
+                }
+              }
+            ],
+            "timeshiftDuration": "0s",
+            "yAxis": {
+              "label": "y1Axis",
+              "scale": "LINEAR"
+            }
+          }
+        },
+        "width": 6,
+        "xPos": 6
+      },
+      {
+        "height": 2,
+        "widget": {
+          "scorecard": {
+            "sparkChartView": {
+              "sparkChartType": "SPARK_LINE"
+            },
+            "timeSeriesQuery": {
+              "timeSeriesFilter": {
+                "aggregation": {
+                  "alignmentPeriod": "60s",
+                  "crossSeriesReducer": "REDUCE_MAX",
+                  "perSeriesAligner": "ALIGN_MAX"
+                },
+                "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_masters/gauge\" resource.type=\"prometheus_target\""
+              }
+            }
+          },
+          "title": "Total Masters"
+        },
+        "width": 4,
+        "xPos": 8,
+        "yPos": 4
+      }
+    ]
+  }
+}

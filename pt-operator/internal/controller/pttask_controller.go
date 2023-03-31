@@ -68,6 +68,7 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		l.Info("unable to fetch PtTask")
 
 	} else {
+		// Set the Id for PtTask
 		if pTask.Status.Id == "" {
 			id := uuid.New()
 			pTask.Status.Id = id.String()
@@ -78,6 +79,7 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 		}
 
+		// Process the execution
 		for _, xe := range pTask.Spec.Execution {
 
 			l.Info("Process ptTask in progress")

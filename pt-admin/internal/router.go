@@ -144,8 +144,8 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
-		// Execeute the workflow to provision/destroy everything
-		v1.POST("/workflow/:wf", func(c *gin.Context) {
+		// Execeute the workflow to provision everything
+		v1.POST("/workflow/provison/:wf", func(c *gin.Context) {
 			l.Info("Execeute the workflow of provisioning everything")
 			resp, err := ExecWorkflow(ctx, c)
 			if err != nil {
@@ -154,10 +154,15 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
+		// TODO: Destroy everything we just provisioned for PtTask, expected: ServiceAccount, GCS, Firestore
+		v1.POST("/workflow/destroy/:executionId", func(c *gin.Context) {
+			l.Info("Execeute the workflow of destroy related resources")
 
-		// Check the status of the workflow
+		})
+
+		// Get the status of the workflow
 		v1.GET("/workflow/:projectId/:region/:workflow/:executionId", func(c *gin.Context) {
-			l.Info("Check the status of the workflow")
+			l.Info("Get the status of the workflow")
 			resp, err := StatusWorkflow(ctx, c)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, []string{err.Error()})
@@ -177,8 +182,8 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 			}
 		})
 
-		// Prepare PtTask to Apply
-		v1.POST("/apply/pttask", func(c *gin.Context) {
+		// Prepare and apply the PtTask
+		v1.POST("/apply/pttask/:executionId", func(c *gin.Context) {
 			l.Info("Prepare PtTask and apply into the Kubenetes cluster")
 			pt, err := PreparenApplyPtTask(ctx, c)
 			if err != nil {
@@ -188,15 +193,15 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 			}
 		})
 
-		// TODO: Destroy everything we just provisioned for PtTask, expected: ServiceAccount, GCS, Firestore
-		v1.POST("/destroy/:executionId", func(c *gin.Context) {
-			l.Info("Destroy everything we just provisioned for PtTask")
-			// err := DestroyEverything(ctx, c)
-			// if err != nil {
-			// 	c.JSON(http.StatusBadRequest, []string{err.Error()})
-			// } else {
-			c.JSON(http.StatusOK, []string{"success"})
-			// }
+		// Create a Dashboard for PtTask
+		v1.POST("/dashboard/pttask/:projectId/:executionId", func(c *gin.Context) {
+			l.Info("Create a Dashboard for PtTask")
+			dUrl, err := CreateDashboard(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, []string{"success", dUrl})
+			}
 		})
 
 		// Get dir of inside container (just for testing)
