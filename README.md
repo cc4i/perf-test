@@ -12,15 +12,44 @@ The performance testing process is to evaluate the performance of the system und
 - Evaluate the system's scalability and stability
 
 
-## Directories
 
-+ /bin - Scripts are for manaual provision development environemtns.
+## Components
 
-+ /locust - All Locust related files, such as Docker files.
+- pt-admin: *Management backend for performance testing.*
 
-+ /tasurus - All Locust related files, such as Docker files, configuration samples, etc.
+- pt-operator: *Operator to schedule performance testing in GKE cluster, aggregate metrics and logs into Cloud Operation Suite.*
 
-+ skaffold.yaml - A Skaffold configuration file.
+- pt-webui: *Web UI to manage and visualize performance testing.*
+
+
+
+## Prerequisites
+```
+Terraform >= 1.3.9
+kubectl >= 1.25
+Go >= 1.19
+Docker >= 20.10
+Google Cloud SDK >= 423.0.0 with credentials
+```
+
+
+## Setup
+```shell
+# 1. Build pt-admin image and push to GAR
+export PT_ADMIN_IMAGE=asia-docker.pkg.dev/play-api-service/test-images/pt-admin:latest
+cd pt-admin
+make docker-buildx IMG=${PT_ADMIN_IMAGE}
+
+# 2. Build pt-operator image and push to GAR
+export PT_OPERATOR_IMAGE=asia-docker.pkg.dev/play-api-service/test-images/pt-operator:latest
+cd pt-operator
+make docker-buildx IMG=${PT_OPERATOR_IMAGE}
+
+# 3. Provision all resources
+cd tf
+terraform init
+terraform apply
+```
 
 
 ## References
