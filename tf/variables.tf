@@ -19,6 +19,7 @@
 variable "project_id" {
   type        = string
   description = "The project ID to host Performance Testing in (required)"
+  default = "play-dev-ops"
 }
 
 variable "region" {
@@ -27,14 +28,30 @@ variable "region" {
   default     = "asia-southeast1"
 }
 
+variable "service_account" {
+  type        = string
+  description = "The account ID to host Performance Testing in"
+  default     = "pt-service-account"
+}
+
+
 variable "archieve_bucket" {
   type        = string
   description = "The bucket to achieve all testing result in "
   default     = "pt-results-archive"
 }
 
+
 variable "firestore_collection" {
   type        = string
   description = "The name of collection in Firestore, where all related records to store "
   default     = "pt-transactions"
+}
+
+
+// Image for pt-admin in Cloud Run
+variable "pt_admin_image" {
+  type        = string
+  description = "The image to deploy to Cloud Run"
+  default     = "asia-docker.pkg.dev/play-api-service/test-images/pt-admin@sha256:71179e6d9d0bb65879a12ba7e91156207404e8f4743d1aa532a2400e7db6efd1"
 }

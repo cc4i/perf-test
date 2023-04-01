@@ -96,3 +96,9 @@ testbin/*
 *.swo
 *~
 tt
+
+# terraform
+.terraform.lock.hcl
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup

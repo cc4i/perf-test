@@ -1,4 +1,4 @@
-#{"projectId": ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}, "network": "pt-vpc-default"}
+#{"projectId": $${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}, "network": "pt-vpc-default"}
 
 main:
     params: [input]
@@ -6,10 +6,10 @@ main:
     - DestroyResource:
         call: http.post
         args:
-            url: ${"https://" + input.url + "/v1/destroy/"+input.executionId}
+            url: $${"https://" + input.url + "/v1/destroy/"+input.executionId}
             auth:
                 type: OIDC
-            body: ${input}
+            body: $${input}
         result: status
     - ReturnOutput:
-        return: ${status}
+        return: $${status}

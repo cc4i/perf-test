@@ -1,49 +1,46 @@
-
-
-#{"projectId": ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}, "network": "pt-vpc-default"}
-
+# Provision resources for PtTask
 main:
     params: [input]
     steps:
     - BuildImages:
         call: http.post
         args:
-            url: ${"https://" + input.url + "/v1/build"}
+            url: $${"https://" + input.url + "/v1/build"}
             auth:
                 type: OIDC
-            body: ${input.taskRequest}
+            body: $${input.taskRequest}
         result: buildReturn
     - CreateVPC:
         steps:
         - ArgsMap:
             call: sys.log
             args:
-                data: ${input}
+                data: $${input}
         - Call4VPC:
             call: http.post
             args:
-                url: ${"https://" + input.url + "/v1/vpc"}
+                url: $${"https://" + input.url + "/v1/vpc"}
                 auth:
                     type: OIDC
-                body: ${input.vpc}
+                body: $${input.vpc}
             result: vpc
     - CreateServiceAccount:
         steps:
         - Call4ServiceAccount:
             call: http.post
             args:
-                url: ${"https://" + input.url + "/v1/sa"}
+                url: $${"https://" + input.url + "/v1/sa"}
                 auth:
                     type: OIDC
-                body: ${input.serviceAccount}
+                body: $${input.serviceAccount}
             result: sa
         - CallBindingSA:
             call: http.post
             args:
-                url: ${"https://" + input.url + "/v1/gkeap/bindingsa"}
+                url: $${"https://" + input.url + "/v1/gkeap/bindingsa"}
                 auth:
                     type: OIDC
-                body: ${input.serviceAccount}
+                body: $${input.serviceAccount}
             result: bindingSA
 
     - CreateAPCluster:
@@ -51,26 +48,26 @@ main:
         - Call4APCluster:
             call: http.post
             args:
-                url: ${"https://" + input.url + "/v1/gkeap"}
+                url: $${"https://" + input.url + "/v1/gkeap"}
                 auth:
                     type: OIDC
-                body: ${input.gkes}
+                body: $${input.gkes}
             result: apCluster
         - ReturnCall4APCluster:
             call: sys.log
             args:
-                data: ${apCluster}
+                data: $${apCluster}
         - CheckAPCluster:
             call: http.post
             args:
-                url: ${"https://" + input.url + "/v1/gkeap/status"}
+                url: $${"https://" + input.url + "/v1/gkeap/status"}
                 auth:
                     type: OIDC
-                body: ${apCluster.body}
+                body: $${apCluster.body}
             result: apClusterStatus
         - CheckIfDone:
             switch:
-                - condition: ${apClusterStatus.body.status == "DONE"}
+                - condition: $${apClusterStatus.body.status == "DONE"}
                   next: ConfigureCluster
         - Wait:
             call: sys.sleep
@@ -83,32 +80,32 @@ main:
         - Call4ClusterInfo:
             call: http.post
             args:
-                url: ${"https://" + input.url + "/v1/gkeap/info"}
+                url: $${"https://" + input.url + "/v1/gkeap/info"}
                 auth:
                     type: OIDC
-                body: ${input.gkes}
+                body: $${input.gkes}
             result: clusterInfo
         - ReturnClusterInfo:
             call: sys.log
             args:
-                data: ${clusterInfo.body}
+                data: $${clusterInfo.body}
 
         - ApplyStorageClassinAP:
             for:
                 value: gke
-                in: ${clusterInfo.body}
+                in: $${clusterInfo.body}
                 steps:
                 - VerifyIfMaster:
                     switch:
-                    - condition: ${gke.isMaster != "true"}
+                    - condition: $${gke.isMaster != "true"}
                       next: continue
                 - ApplyManifest4SC:
                     call: http.post
                     args:
-                        url: ${"https://" + input.url + "/v1/gkeap/manifest/sc.yaml"}
+                        url: $${"https://" + input.url + "/v1/gkeap/manifest/sc.yaml"}
                         auth:
                             type: OIDC
-                        body: ${gke}
+                        body: $${gke}
                     result: appliedSC
                 - WaitSC2Ready:
                     call: sys.sleep
@@ -117,22 +114,22 @@ main:
                 - ApplyManifest4PVC:
                     call: http.post
                     args:
-                        url: ${"https://" + input.url + "/v1/gkeap/manifest/pvc.yaml"}
+                        url: $${"https://" + input.url + "/v1/gkeap/manifest/pvc.yaml"}
                         auth:
                             type: OIDC
-                        body: ${gke}
+                        body: $${gke}
                     result: appliedPVC
                 - CheckPVC:
                     call: http.post
                     args:
-                        url: ${"https://" + input.url + "/v1/gkeap/pvc"}
+                        url: $${"https://" + input.url + "/v1/gkeap/pvc"}
                         auth:
                             type: OIDC
-                        body: ${gke}
+                        body: $${gke}
                     result: pvcStatus
                 - CheckPVCIfDone:
                     switch:
-                        - condition: ${pvcStatus.body.status == "DONE"}
+                        - condition: $${pvcStatus.body.status == "DONE"}
                           next: ApplyManifest4PtOperator
                 - WaitPVC:
                     call: sys.sleep
@@ -142,22 +139,22 @@ main:
                 - ApplyManifest4PtOperator:
                     call: http.post
                     args:
-                        url: ${"https://" + input.url + "/v1/gkeap/manifest/pt-operator.yaml"}
+                        url: $${"https://" + input.url + "/v1/gkeap/manifest/pt-operator.yaml"}
                         auth:
                             type: OIDC
-                        body: ${gke}
+                        body: $${gke}
                     result: appliedPtOperator
                 - CheckPtOperator:
                     call: http.post
                     args:
-                        url: ${"https://" + input.url + "/v1/gkeap/ptoperator"}
+                        url: $${"https://" + input.url + "/v1/gkeap/ptoperator"}
                         auth:
                             type: OIDC
-                        body: ${gke}
+                        body: $${gke}
                     result: ptStatus
                 - CheckPtOperatorIfDone:
                     switch:
-                        - condition: ${ptStatus.body.status == "DONE"}
+                        - condition: $${ptStatus.body.status == "DONE"}
                           next: ApplyaPtTask
                 - WaitPtOperator:
                     call: sys.sleep
@@ -167,18 +164,18 @@ main:
                 - ApplyaPtTask:
                     call: http.post
                     args:
-                        url: ${"https://" + input.url + "/v1/apply/pttask/" + sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+                        url: $${"https://" + input.url + "/v1/apply/pttask/" + sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
                         auth:
                             type: OIDC
-                        body: ${input}
+                        body: $${input}
                     result: ptTaskStatus
     - CreateDashboard:
         call: http.post
         args:
-            url: ${"https://" + input.url + "/v1/dashboard/pttask" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+            url: $${"https://" + input.url + "/v1/dashboard/pttask" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
             auth:
                 type: OIDC
-            body: ${input}
+            body: $${input}
         result: dashboardUrl
     - AllDone:
-        return: ${input}
+        return: $${input}
