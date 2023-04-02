@@ -32,10 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-type WfArgument struct {
-	Argument ProvisionWf `json:"argument"`
-}
-
 type ProvisionWf struct {
 	// The url of Cloud Run
 	Url            string         `json:"url"`
@@ -1055,23 +1051,32 @@ func save2gcs(ctx context.Context, projectId string, srcFile string) (string, er
 
 func DestroyResources(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx)
-	var pwf ProvisionWf
+	projectId := c.Param("projectId")
+	executionId := c.Param("executionId")
 	ti := &helper.TInfra{}
-	buf, err := io.ReadAll(c.Request.Body)
+
+	trans, err := helper.Read(ctx, projectId, "pt-transactions", executionId)
 	if err != nil {
-		l.Error(err, "io.ReadAll")
+		l.Error(err, "unable to read transaction", "projectId", projectId, "executionId", executionId)
 		return err
 	}
-	err = json.Unmarshal(buf, &pwf)
-	if err != nil {
-		l.Error(err, "json.Unmarshal", "buf", string(buf))
-		return err
-	}
+	l.Info("transaction read", "projectId", projectId, "executionId", executionId, "trans.id", trans.Id)
+
 	// TODO: delete all resources created by for PT
 	// delete GKE Autopilot cluster
-	for _, gke := range pwf.GKEs {
+	var input ProvisionWf
+	buf, err := json.Marshal(trans.Input)
+	if err != nil {
+		l.Error(err, "unable to marshal transaction input", "projectId", projectId, "executionId", executionId)
+	}
+	err = json.Unmarshal(buf, &input)
+	if err != nil {
+		l.Error(err, "unable to unmarshal transaction input", "projectId", projectId, "executionId", executionId)
+	}
 
-		_, err = ti.DeleteAutopilotCluster(ctx, pwf.ProjectId, gke.Cluster, gke.Location)
+	for _, gke := range input.GKEs {
+		l.Info("deleting GKE cluster", "cluster", gke.Cluster, "location", gke.Location)
+		_, err = ti.DeleteAutopilotCluster(ctx, gke.ProjectId, gke.Cluster, gke.Location)
 		if err != nil {
 			l.Error(err, "ti.DeleteAutopilotCluster", "cluster", gke.Cluster, "location", gke.Location)
 			return err

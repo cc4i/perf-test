@@ -165,7 +165,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 			}
 		})
 		// TODO: Destroy everything we just provisioned for PtTask, expected: ServiceAccount, GCS, Firestore
-		v1.POST("/workflow/destroy/:executionId", func(c *gin.Context) {
+		v1.POST("/workflow/destroy/:projectId/:executionId", func(c *gin.Context) {
 			l.Info("Execeute the workflow of destroy related resources")
 			err := DestroyResources(ctx, c)
 			if err != nil {

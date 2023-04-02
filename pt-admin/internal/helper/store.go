@@ -44,7 +44,7 @@ func Insert(ctx context.Context, projectId string, collection string, ptt PtTran
 }
 
 // Read the value from the collection in Firestore
-func Read(ctx context.Context, projectId string, collection string, id string) (map[string]interface{}, error) {
+func Read(ctx context.Context, projectId string, collection string, id string) (*PtTransaction, error) {
 	l := log.FromContext(ctx).WithName("Read")
 	l.Info("Read a value from a collection", "collection", collection)
 	client, err := firestore.NewClient(ctx, projectId)
@@ -53,12 +53,18 @@ func Read(ctx context.Context, projectId string, collection string, id string) (
 	}
 	defer client.Close()
 
-	doc, err := client.Collection(collection).Doc(id).Get(ctx)
+	snapshot, err := client.Collection(collection).Doc(id).Get(ctx)
 	if err != nil {
 		l.Error(err, "failed to get doc")
 		return nil, err
 	}
-	return doc.Data(), nil
+	var pt PtTransaction
+	err = snapshot.DataTo(&pt)
+	if err != nil {
+		l.Error(err, "failed to convert data")
+		return nil, err
+	}
+	return &pt, nil
 }
 
 // Update dashboard url of the collection in Firestore
