@@ -11,6 +11,7 @@ import (
 	containerpb "cloud.google.com/go/container/apiv1/containerpb"
 	admin "cloud.google.com/go/iam/admin/apiv1"
 	adminpb "cloud.google.com/go/iam/admin/apiv1/adminpb"
+	"cloud.google.com/go/pubsub"
 	wfexec "cloud.google.com/go/workflows/executions/apiv1"
 	wfexecpb "cloud.google.com/go/workflows/executions/apiv1/executionspb"
 	"google.golang.org/api/cloudresourcemanager/v1"
@@ -57,36 +58,43 @@ type OperationalStuff interface {
 	// Set IAM policies to a Kubernetes service account
 	SetIamPolicies2KSA(ctx context.Context, projectId string, ns string, ksa string) error
 	// Create a GKE Autopilot cluster
-	CreateAutopilotCluster(ctx context.Context, projectId string, cluster string, region string, network string, subnet string) (*containerpb.Operation, error)
+	CreateAutopilotCluster(ctx context.Context, projectId string, cluster string, region string, network string, subnet string, saId string) (*containerpb.Operation, error)
+	// Delete a GKE Autopilot cluster
+	DeleteAutopilotCluster(ctx context.Context, projectId string, cluster string, region string) (*containerpb.Operation, error)
 	// Get status of provisioning a GKE Autopilot cluster
 	AutopilotClusterStatus(ctx context.Context, opId string) (*containerpb.Operation, error)
 	// Create a zonal GKE cluster
 	CreateZonalCluster(ctx context.Context, projectId string, cluster string, zone string, network string, subnet string, saName string) (*containerpb.Operation, error)
-
 	// Execute a workflow
-	ExecWorkflow(ctx context.Context, projectId string, region string, workflow string, input string) (*wfexecpb.Execution, error)
+	ExecWorkflow(ctx context.Context, projectId string, workflow string, input []byte) error
 }
 
-// ExecWorkflow executes a workflow and returns the execution and error. In side the workflow, it will call the related APIs to provision the testing infrastructure.
+// ExecWorkflow send message to a pubsub topic to trigger a workflow execution
 // projectId: project id
-// region: region of the workflow
 // workflow: workflow name
-// input: input to the workflow, which is a JSON string
-// return: execution of the workflow and error
-func (ti *TInfra) ExecWorkflow(ctx context.Context, projectId string, region string, workflow string, input string) (*wfexecpb.Execution, error) {
-	// https://cloud.google.com/workflows/docs/quickstart-client-libraries
-	c, err := wfexec.NewClient(ctx)
+// input: input to the workflow, which is JSON format
+// return: error
+func (ti *TInfra) ExecWorkflow(ctx context.Context, projectId string, workflow string, input []byte) error {
+	l := log.FromContext(ctx).WithName("ExecWorkflow")
+	// Trigger workflow execution directly has limit 32K for input data and very hard to use through REST API.
+	// So use pubsub to trigger the workflow execution.
+	client, err := pubsub.NewClient(ctx, projectId)
 	if err != nil {
-		return &wfexecpb.Execution{}, err
+		l.Error(err, "Failed to create a pubsub client")
 	}
-	defer c.Close()
+	defer client.Close()
+	topic := client.Topic(workflow)
 
-	return c.CreateExecution(ctx, &wfexecpb.CreateExecutionRequest{
-		Parent: fmt.Sprintf("projects/%s/locations/%s/workflows/%s", projectId, region, workflow),
-		Execution: &wfexecpb.Execution{
-			Argument: input,
-		},
-	})
+	msg := &pubsub.Message{
+		Data: input,
+	}
+	sid, err := topic.Publish(ctx, msg).Get(ctx)
+	if err != nil {
+		l.Error(err, "Failed to publish a message to trigger workflow", "workflow", workflow)
+		return err
+	}
+	l.Info("Published a message to trigger workflow", "sid", sid, "workflow", workflow)
+	return nil
 }
 
 func (ti *TInfra) StatusWorkflow(ctx context.Context, projectId string, region string, workflow string, execution string) (*wfexecpb.Execution, error) {
@@ -146,7 +154,7 @@ func (ti *TInfra) CreateVPCNetwork(ctx context.Context, projectId string, name s
 
 }
 
-func (ti *TInfra) CreateAutopilotCluster(ctx context.Context, projectId string, cluster string, region string, network string, subnet string) (*containerpb.Operation, error) {
+func (ti *TInfra) CreateAutopilotCluster(ctx context.Context, projectId string, cluster string, region string, network string, subnet string, saId string) (*containerpb.Operation, error) {
 	// https://cloud.google.com/go/docs/reference/cloud.google.com/go/container/apiv1
 	l := log.FromContext(ctx).WithName("CreateAutopilotCluster")
 	c, err := container.NewClusterManagerClient(ctx)
@@ -172,6 +180,13 @@ func (ti *TInfra) CreateAutopilotCluster(ctx context.Context, projectId string, 
 				ReleaseChannel: &containerpb.ReleaseChannel{
 					Channel: containerpb.ReleaseChannel_RAPID,
 				},
+				// Assign a service account to the cluster
+				NodeConfig: &containerpb.NodeConfig{
+					ServiceAccount: fmt.Sprintf("%s@%s.iam.gserviceaccount.com", saId, projectId),
+					OauthScopes: []string{
+						"https://www.googleapis.com/auth/cloud-platform",
+					},
+				},
 			},
 		}
 		return c.CreateCluster(ctx, req)
@@ -180,6 +195,30 @@ func (ti *TInfra) CreateAutopilotCluster(ctx context.Context, projectId string, 
 		return &containerpb.Operation{}, nil
 	}
 
+}
+
+func (ti *TInfra) DeleteAutopilotCluster(ctx context.Context, projectId string, cluster string, region string) (*containerpb.Operation, error) {
+	// https://cloud.google.com/go/docs/reference/cloud.google.com/go/container/apiv1
+	l := log.FromContext(ctx).WithName("DeleteAutopilotCluster")
+	c, err := container.NewClusterManagerClient(ctx)
+	if err != nil {
+		return &containerpb.Operation{}, err
+	}
+	defer c.Close()
+
+	_, err = c.GetCluster(ctx, &containerpb.GetClusterRequest{
+		Name: fmt.Sprintf("projects/%s/locations/%s/clusters/%s", projectId, region, cluster),
+	})
+	if err != nil {
+		l.Info("Cluster does not exist, nothing to delete")
+		return &containerpb.Operation{}, nil
+	} else {
+		l.Info("Cluster exists, deleting")
+		req := &containerpb.DeleteClusterRequest{
+			Name: fmt.Sprintf("projects/%s/locations/%s/clusters/%s", projectId, region, cluster),
+		}
+		return c.DeleteCluster(ctx, req)
+	}
 }
 
 func (ti *TInfra) AutopilotClusterStatus(ctx context.Context, projectId, region, opId string) (*containerpb.Operation, error) {

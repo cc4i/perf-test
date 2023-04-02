@@ -145,19 +145,34 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 			}
 		})
 		// Execeute the workflow to provision everything
-		v1.POST("/workflow/provison/:wf", func(c *gin.Context) {
+		v1.POST("/workflow/provision/:wf", func(c *gin.Context) {
 			l.Info("Execeute the workflow of provisioning everything")
-			resp, err := ExecWorkflow(ctx, c)
+			err := ExecWorkflow(ctx, c)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, []string{err.Error()})
 			} else {
-				c.JSON(http.StatusOK, resp)
+				c.JSON(http.StatusOK, []string{"success"})
+			}
+		})
+		// Record the execution of workflow into Firestore
+		v1.PATCH("/workflow/:wf/:executionId", func(c *gin.Context) {
+			l.Info("Record the execution of workflow into Firestore")
+			err := RecordWorkflow(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, []string{"success"})
 			}
 		})
 		// TODO: Destroy everything we just provisioned for PtTask, expected: ServiceAccount, GCS, Firestore
 		v1.POST("/workflow/destroy/:executionId", func(c *gin.Context) {
 			l.Info("Execeute the workflow of destroy related resources")
-
+			err := DestroyResources(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, []string{"success"})
+			}
 		})
 
 		// Get the status of the workflow

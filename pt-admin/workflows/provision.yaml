@@ -1,7 +1,22 @@
 # Provision resources for PtTask
 main:
-    params: [input]
+    params: [msg]
     steps:
+    - Init:
+        assign:
+            - input: $${json.decode(base64.decode(msg.data.message.data))}
+    - PrintOutInput:
+        call: sys.log
+        args:
+            text: $${input}
+    - RecordExecution:
+        call: http.patch
+        args:
+            url: $${"https://" + input.url + "/v1/workflow/" +sys.get_env("GOOGLE_CLOUD_WORKFLOW_ID") +"/" + sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+            auth:
+                type: OIDC
+            body: $${input}
+        result: recordStatus
     - BuildImages:
         call: http.post
         args:
@@ -172,7 +187,7 @@ main:
     - CreateDashboard:
         call: http.post
         args:
-            url: $${"https://" + input.url + "/v1/dashboard/pttask" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+            url: $${"https://" + input.url + "/v1/dashboard/pttask/" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
             auth:
                 type: OIDC
             body: $${input}

@@ -3,6 +3,10 @@
 // Do not change default values in variables.tf unless you know what you are doing
 // To override default values, create a file called terraform.tfvars and put your overrides there
 
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
 // Enable requires APIs
 resource "google_project_service" "required_services" {
   project = var.project_id
@@ -27,9 +31,20 @@ resource "google_project_service" "required_services" {
     "clouddeploy.googleapis.com",
     "cloudbuild.googleapis.com",
     "firestore.googleapis.com",
+    "eventarc.googleapis.com",
   ])
   service = each.key
 
+}
+
+// Grant the iam.serviceAccountTokenCreator role to the Pub/Sub service account
+resource "google_project_iam_binding" "token_creator_iam" {
+ provider = google-beta
+ project  = var.project_id
+ role     = "roles/iam.serviceAccountTokenCreator"
+
+ members = ["serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"]
+  depends_on = [google_project_service.required_services]
 }
 
 // Provision a service account
@@ -39,71 +54,96 @@ resource "google_service_account" "service_account" {
   display_name = var.service_account
 }
 
-// Grant service account with GKE admin role
+// Grant service account with permissions
+// 1-Grant service account with Network Admin role
+resource "google_project_iam_member" "service_account_network_admin" {
+  project = var.project_id
+  role   = "roles/compute.networkAdmin"
+  member = "serviceAccount:${google_service_account.service_account.email}"
+}
+// 2-Grant service account with GKE admin role
 resource "google_project_iam_member" "service_account_gke_admin" {
   project = var.project_id
   role   = "roles/container.admin"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
 
-// Grant service account with Storage Admin role
+// 3-Grant service account with Storage Admin role
 resource "google_project_iam_member" "service_account_storage_admin" {
   project = var.project_id
   role   = "roles/storage.admin"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
-// Grant service account with Secret Manager Admin role
-resource "google_project_iam_member" "service_account_secret_manager_admin" {
-  project = var.project_id
-  role   = "roles/secretmanager.admin"
-  member = "serviceAccount:${google_service_account.service_account.email}"
-}
-// Grant service account with Cloud Run Admin role
+// 4-Grant service account with Cloud Run Admin role
 resource "google_project_iam_member" "service_account_cloud_run_admin" {
   project = var.project_id
   role   = "roles/run.admin"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
-// Grant service account with Workflows Admin role
+// 5-Grant service account with Workflows Admin role
 resource "google_project_iam_member" "service_account_cloud_workflows_admin" {
   project = var.project_id
   role   = "roles/workflows.admin"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
-// Grant service account with Cloud Build Admin role
+// 6-Grant service account with Cloud Build Admin role
 resource "google_project_iam_member" "service_account_cloud_build_admin" {
   project = var.project_id
   role   = "roles/cloudbuild.builds.editor"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
-// Grant service account with Cloud Monitoring Admin role
+// 7-Grant service account with Cloud Monitoring Admin role
 resource "google_project_iam_member" "service_account_cloud_monitoring_admin" {
   project = var.project_id
   role   = "roles/monitoring.admin"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
-// Grant service account with Cloud Logging Admin role
+// 8-Grant service account with Cloud Logging Admin role
 resource "google_project_iam_member" "service_account_cloud_logging_admin" {
   project = var.project_id
   role   = "roles/logging.admin"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
-// Grant service account with Firestore Admin role
+// 9-Grant service account with Firestore Admin role
 resource "google_project_iam_member" "service_account_firestore_admin" {
   project = var.project_id
   role   = "roles/datastore.owner"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
-// Grant service account with Project IAM Admin role
+// 10-Grant service account with Project IAM Admin role
 resource "google_project_iam_member" "service_account_project_iam_admin" {
   project = var.project_id
   role   = "roles/resourcemanager.projectIamAdmin"
   member = "serviceAccount:${google_service_account.service_account.email}"
 }
+// 11-Grant service account with Service Account Admin role
+resource "google_project_iam_member" "service_account_service_account_admin" {
+  project = var.project_id
+  role   = "roles/iam.serviceAccountAdmin"
+  member = "serviceAccount:${google_service_account.service_account.email}"
+}
+// 12-Grant service account with Artifact Registry Admin role
+resource "google_project_iam_member" "service_account_artifact_registry_admin" {
+  project = var.project_id
+  role   = "roles/artifactregistry.writer"
+  member = "serviceAccount:${google_service_account.service_account.email}"
+}
+// 13-Grant service account with service account user role
+resource "google_project_iam_member" "service_account_service_account_user" {
+  project = var.project_id
+  role   = "roles/iam.serviceAccountUser"
+  member = "serviceAccount:${google_service_account.service_account.email}"
+}
+// 14-Grant service account with Pub/Sub Publisher role
+resource "google_project_iam_member" "service_account_pubsub_publisher" {
+  project = var.project_id
+  role   = "roles/pubsub.publisher"
+  member = "serviceAccount:${google_service_account.service_account.email}"
+}
 
 
 // Provision bucket to store test results
-resource "google_storage_bucket" "bucket" {
+resource "google_storage_bucket" "pt_archieve_bucket" {
   project       = var.project_id
   name          = var.archieve_bucket
   location      = var.region
@@ -111,9 +151,18 @@ resource "google_storage_bucket" "bucket" {
   public_access_prevention = "enforced"
   uniform_bucket_level_access = true
 }
+// Provision bucket for Cloud Build
+resource "google_storage_bucket" "pt_build_bucket" {
+  project       = var.project_id
+  name          = "${var.project_id}_cloudbuild"
+  location      = var.region
+  force_destroy = true
+  public_access_prevention = "enforced"
+  uniform_bucket_level_access = true
+}
 
 // Provision a artifact registry for Docker images
-resource "google_artifact_registry_repository" "repository" {
+resource "google_artifact_registry_repository" "pt_repository" {
   project  = var.project_id
   provider = google-beta
   location = "asia"
@@ -198,11 +247,23 @@ resource "google_cloud_run_service" "pt_admin_service" {
     percent         = 100
     latest_revision = true
   }
+  depends_on = [
+    google_service_account.service_account,
+  ]
 }
 
+// Provision pubsub topics
+resource "google_pubsub_topic" "pt_provision_topic" {
+  project = var.project_id
+  name    = "pt-provision-wf"
+}
+resource "google_pubsub_topic" "pt_destroy_topic" {
+  project = var.project_id
+  name    = "pt-destroy-wf"
+}
 
 // Provision a workflow to run provision infrastructure and run tests
-resource "google_workflows_workflow" "pt-provision-wf" {
+resource "google_workflows_workflow" "pt_provision_wf" {
   project = var.project_id
   region = var.region
   name = "pt-provision-wf"
@@ -210,11 +271,36 @@ resource "google_workflows_workflow" "pt-provision-wf" {
   description = "Provision all related resources for PtTask"
 
   source_contents = templatefile("${path.module}/../pt-admin/workflows/provision.yaml",{})
+  depends_on = [
+    google_service_account.service_account,
+  ]
 }
 
+// Provision eventarc trigger to run provision workflow
+resource "google_eventarc_trigger" "pt_provision_trigger" {
+  project = var.project_id
+  location = var.region
+  name = "pt-provision-trigger"
+  matching_criteria {
+    attribute = "type" 
+    value = "google.cloud.pubsub.topic.v1.messagePublished"
+  }
+  transport {
+    pubsub  {
+      topic = google_pubsub_topic.pt_provision_topic.id
+    }
+  }
+  destination  {
+    workflow = google_workflows_workflow.pt_provision_wf.name
+  }
+  service_account = google_service_account.service_account.email
+  depends_on = [
+    google_workflows_workflow.pt_provision_wf
+  ]
+}
 
 // Provision a workflow to destroy infrastructure
-resource "google_workflows_workflow" "pt-destroy-wf" {
+resource "google_workflows_workflow" "pt_destroy_wf" {
   project = var.project_id
   region = var.region
   name = "pt-destroy-wf"
@@ -222,4 +308,31 @@ resource "google_workflows_workflow" "pt-destroy-wf" {
   description = "Destroy some of related resources for PtTask, excepted VPC, Subnet, SA, etc"
 
   source_contents = templatefile("${path.module}/../pt-admin/workflows/destroy.yaml",{})
+  depends_on = [
+    google_service_account.service_account,
+  ]
 }
+
+// Provision eventarc trigger to run destroy workflow
+resource "google_eventarc_trigger" "pt_destroy_trigger" {
+  project = var.project_id
+  location = var.region
+  name = "pt-destroy-trigger"
+  matching_criteria  {
+    attribute = "type" 
+    value = "google.cloud.pubsub.topic.v1.messagePublished"
+  }
+  transport  {
+    pubsub  {
+      topic = google_pubsub_topic.pt_destroy_topic.id
+    }
+  }
+  destination  {
+    workflow = google_workflows_workflow.pt_destroy_wf.name
+  }
+  service_account = google_service_account.service_account.email
+  depends_on = [
+    google_workflows_workflow.pt_destroy_wf
+  ]
+}
+

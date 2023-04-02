@@ -30,10 +30,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	"golang.org/x/oauth2"
-	auth "golang.org/x/oauth2/google"
 )
+
+type WfArgument struct {
+	Argument ProvisionWf `json:"argument"`
+}
 
 type ProvisionWf struct {
 	// The url of Cloud Run
@@ -181,7 +182,7 @@ func CreateGKEAutopilotCluster(ctx context.Context, c *gin.Context) ([]GKE, erro
 	// Return array of GKE with operationId, if operationId is empty, it means the cluster is existed
 	var observed []GKE
 	for _, gke := range input {
-		op, err := ti.CreateAutopilotCluster(ctx, gke.ProjectId, gke.Cluster, gke.Location, gke.Network, gke.Subnetwork)
+		op, err := ti.CreateAutopilotCluster(ctx, gke.ProjectId, gke.Cluster, gke.Location, gke.Network, gke.Subnetwork, gke.AccountId)
 		if err != nil {
 			return []GKE{}, err
 		}
@@ -409,8 +410,41 @@ func GetPtOperatorStatus(ctx context.Context, c *gin.Context) (map[string]string
 
 }
 
+// Record the execution of a workflow
+func RecordWorkflow(ctx context.Context, c *gin.Context) error {
+	l := log.FromContext(ctx).WithName("RecordWorkflow")
+	var pwf ProvisionWf
+	// The name of the workflow to be executed
+	wf := c.Param("wf")
+	eId := c.Param("executionId")
+	buf, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		l.Error(err, "io.ReadAll")
+		return err
+	}
+	err = json.Unmarshal(buf, &pwf)
+	if err != nil {
+		l.Error(err, "json.Unmarshal", "buf", string(buf))
+		return err
+	}
+
+	// Save executionId to Firestore
+	_, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
+		Id:             eId,
+		WorkflowName:   wf,
+		Input:          pwf,
+		StatusWorkflow: "ACTIVE",
+	})
+	if err != nil {
+		l.Error(err, "failed to insert PtTransaction to Firestore")
+		return err
+	}
+	return nil
+
+}
+
 // Execute the workflow to provision all related resources and apply PtTask to run a Performance Test
-func ExecWorkflow(ctx context.Context, c *gin.Context) (*wfexecpb.Execution, error) {
+func ExecWorkflow(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx).WithName("ExecWorkflow")
 	ti := &helper.TInfra{}
 	var pwf ProvisionWf
@@ -419,32 +453,31 @@ func ExecWorkflow(ctx context.Context, c *gin.Context) (*wfexecpb.Execution, err
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		l.Error(err, "io.ReadAll")
-		return &wfexecpb.Execution{}, err
+		return err
 	}
 	err = json.Unmarshal(buf, &pwf)
 	if err != nil {
 		l.Error(err, "json.Unmarshal", "buf", string(buf))
-		return &wfexecpb.Execution{}, err
+		return err
 	}
-	ex, err := ti.ExecWorkflow(ctx, pwf.ProjectId, pwf.Region, wf, string(buf))
+	err = ti.ExecWorkflow(ctx, pwf.ProjectId, wf, buf)
 	if err != nil {
 		l.Error(err, "ti.ExecWorkflow")
-		return &wfexecpb.Execution{}, err
+		return err
 	}
-	l.Info("ExecWorkflow", "startTime", ex.StartTime.String())
 
 	// Save executionId to Firestore
-	_, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
-		Id:             ex.Name,
-		WorkflowName:   wf,
-		Input:          pwf,
-		StatusWorkflow: ex.State.String(),
-	})
-	if err != nil {
-		l.Error(err, "failed to insert PtTransaction to Firestore")
-		// return ex, err
-	}
-	return ex, nil
+	// _, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
+	// 	Id:             ex.Name,
+	// 	WorkflowName:   wf,
+	// 	Input:          pwf,
+	// 	StatusWorkflow: ex.State.String(),
+	// })
+	// if err != nil {
+	// 	l.Error(err, "failed to insert PtTransaction to Firestore")
+	// 	// return ex, err
+	// }
+	return nil
 
 }
 
@@ -466,19 +499,45 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 	dId := ""
 	projectId := c.Param("projectId")
 	executionId := c.Param("executionId")
-	var token *oauth2.Token
-	url := "https://monitoring.googleapis.com/v1/projects/" + projectId + "/dashboards"
-	scopes := []string{
-		url,
+	// var token *oauth2.Token
+	url := fmt.Sprintf("https://monitoring.googleapis.com/v1/projects/%s/dashboards", projectId)
+	// Get access token
+	// curl "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+	// --header "Metadata-Flavor: Google"
+	// scopes := []string{
+	// 	"https://www.googleapis.com/auth/cloud-platform",
+	// }
+	// if credentials, err := auth.FindDefaultCredentials(ctx, scopes...); err == nil {
+	// 	token, err = credentials.TokenSource.Token()
+	// 	if err != nil {
+	// 		l.Error(err, "credentials.TokenSource.Token")
+	// 		return dId, err
+	// 	}
+	// }
+	aReq, err := http.NewRequest("GET", "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", nil)
+	if err != nil {
+		l.Error(err, "http.NewRequest")
+		return dId, err
 	}
-	if credentials, err := auth.FindDefaultCredentials(ctx, scopes...); err == nil {
-		token, err = credentials.TokenSource.Token()
-		if err != nil {
-			l.Error(err, "credentials.TokenSource.Token")
-			return dId, err
-		}
+	aReq.Header.Add("Metadata-Flavor", "Google")
+	aClient := &http.Client{}
+	aResp, err := aClient.Do(aReq)
+	if err != nil {
+		l.Error(err, "aClient.Do")
+		return dId, err
 	}
-
+	defer aResp.Body.Close()
+	aBody, err := ioutil.ReadAll(aResp.Body)
+	if err != nil {
+		l.Error(err, "ioutil.ReadAll")
+		return dId, err
+	}
+	var aRespBody map[string]interface{}
+	err = json.Unmarshal(aBody, &aRespBody)
+	if err != nil {
+		l.Error(err, "json.Unmarshal")
+		return dId, err
+	}
 	// curl -d @my-dashboard.json
 	// -H "Authorization: Bearer $(gcloud auth print-access-token)"
 	// -H 'Content-Type: application/json'
@@ -499,7 +558,7 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 		l.Error(err, "http.NewRequest")
 		return dId, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+fmt.Sprintf("%v", aRespBody["access_token"]))
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -543,18 +602,18 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, error) {
 	l := log.FromContext(ctx).WithName("PreparePtTask")
 	executionId := c.Param("executionId")
-	var input ProvisionWf
+	var pwf ProvisionWf
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		l.Error(err, "io.ReadAll")
 		return &api.PtTask{}, err
 	}
-	err = json.Unmarshal(buf, &input)
+	err = json.Unmarshal(buf, &pwf)
 	if err != nil {
 		l.Error(err, "json.Unmarshal", "buf", string(buf))
 		return &api.PtTask{}, err
 	}
-	tr := input.TaskRequest
+	tr := pwf.TaskRequest
 
 	// Calcaulate the number of pods
 	var pt *api.PtTask
@@ -615,7 +674,7 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 		l.Info("Jmeter PtTask, still under development")
 	}
 
-	for _, gke := range input.GKEs {
+	for _, gke := range pwf.GKEs {
 		if gke.IsMater == "true" {
 
 			//Get GKE credential
@@ -992,4 +1051,35 @@ func save2gcs(ctx context.Context, projectId string, srcFile string) (string, er
 	}
 	l.Info("file saved to GCS", "file", dstFile)
 	return dstFile, nil
+}
+
+func DestroyResources(ctx context.Context, c *gin.Context) error {
+	l := log.FromContext(ctx)
+	var pwf ProvisionWf
+	ti := &helper.TInfra{}
+	buf, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		l.Error(err, "io.ReadAll")
+		return err
+	}
+	err = json.Unmarshal(buf, &pwf)
+	if err != nil {
+		l.Error(err, "json.Unmarshal", "buf", string(buf))
+		return err
+	}
+	// TODO: delete all resources created by for PT
+	// delete GKE Autopilot cluster
+	for _, gke := range pwf.GKEs {
+
+		_, err = ti.DeleteAutopilotCluster(ctx, pwf.ProjectId, gke.Cluster, gke.Location)
+		if err != nil {
+			l.Error(err, "ti.DeleteAutopilotCluster", "cluster", gke.Cluster, "location", gke.Location)
+			return err
+		}
+	}
+	//TODO: delete Service Account ?
+
+	//TODO: delete VPC ?
+
+	return nil
 }

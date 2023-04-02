@@ -35,13 +35,16 @@ func Insert(ctx context.Context, projectId string, collection string, ptt PtTran
 	}
 	defer client.Close()
 
-	return client.Doc(collection).Create(ctx, map[string]PtTransaction{
-		ptt.Id: ptt,
-	})
+	ret, err := client.Collection(collection).Doc(ptt.Id).Create(ctx, ptt)
+	if err != nil {
+		l.Error(err, "failed to add doc")
+		return nil, err
+	}
+	return ret, nil
 }
 
 // Read the value from the collection in Firestore
-func Read(ctx context.Context, projectId string, collection string) (map[string]interface{}, error) {
+func Read(ctx context.Context, projectId string, collection string, id string) (map[string]interface{}, error) {
 	l := log.FromContext(ctx).WithName("Read")
 	l.Info("Read a value from a collection", "collection", collection)
 	client, err := firestore.NewClient(ctx, projectId)
@@ -50,7 +53,7 @@ func Read(ctx context.Context, projectId string, collection string) (map[string]
 	}
 	defer client.Close()
 
-	doc, err := client.Doc(collection).Get(ctx)
+	doc, err := client.Collection(collection).Doc(id).Get(ctx)
 	if err != nil {
 		l.Error(err, "failed to get doc")
 		return nil, err
@@ -68,9 +71,7 @@ func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl str
 	}
 	defer client.Close()
 
-	path := collection + "/" + id
-
-	snapshot, err := client.Doc(path).Get(ctx)
+	snapshot, err := client.Collection(collection).Doc(id).Get(ctx)
 	if err != nil {
 		l.Error(err, "failed to get doc")
 		return nil, err
@@ -84,7 +85,7 @@ func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl str
 	orgin.DashboardUrl = dUrl
 
 	// Update the value
-	return client.Doc(path).Set(ctx, orgin)
+	return client.Collection(collection).Doc(id).Set(ctx, orgin)
 
 }
 
@@ -97,9 +98,7 @@ func UpdatePtTask(ctx context.Context, projectId, collection, id string, ptTask 
 	}
 	defer client.Close()
 
-	path := collection + "/" + id
-
-	snapshot, err := client.Doc(path).Get(ctx)
+	snapshot, err := client.Collection(collection).Doc(id).Get(ctx)
 	if err != nil {
 		l.Error(err, "failed to get doc")
 		return nil, err
@@ -113,7 +112,7 @@ func UpdatePtTask(ctx context.Context, projectId, collection, id string, ptTask 
 	orgin.PtTask = ptTask
 
 	// Update the value
-	return client.Doc(path).Set(ctx, orgin)
+	return client.Collection(collection).Doc(id).Set(ctx, orgin)
 
 }
 
@@ -126,9 +125,7 @@ func UpdateStatusPtTask(ctx context.Context, projectId, collection, id, status s
 	}
 	defer client.Close()
 
-	path := collection + "/" + id
-
-	snapshot, err := client.Doc(path).Get(ctx)
+	snapshot, err := client.Collection(collection).Doc(id).Get(ctx)
 	if err != nil {
 		l.Error(err, "failed to get doc")
 		return nil, err
@@ -142,6 +139,6 @@ func UpdateStatusPtTask(ctx context.Context, projectId, collection, id, status s
 	orgin.StatusPtTask = status
 
 	// Update the value
-	return client.Doc(path).Set(ctx, orgin)
+	return client.Collection(collection).Doc(id).Set(ctx, orgin)
 
 }
