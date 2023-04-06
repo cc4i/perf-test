@@ -180,15 +180,25 @@ func (ti *TInfra) CreateAutopilotCluster(ctx context.Context, projectId string, 
 				ReleaseChannel: &containerpb.ReleaseChannel{
 					Channel: containerpb.ReleaseChannel_RAPID,
 				},
-				// Assign a service account to the cluster
+				// Assign a service account to the cluster: THIS DOES NOT WORK, SO USE FOLLOWING INSTEAD!
 				NodeConfig: &containerpb.NodeConfig{
 					ServiceAccount: fmt.Sprintf("%s@%s.iam.gserviceaccount.com", saId, projectId),
 					OauthScopes: []string{
 						"https://www.googleapis.com/auth/cloud-platform",
 					},
 				},
+				// Assign a service account to the cluster
+				Autoscaling: &containerpb.ClusterAutoscaling{
+					AutoprovisioningNodePoolDefaults: &containerpb.AutoprovisioningNodePoolDefaults{
+						ServiceAccount: fmt.Sprintf("%s@%s.iam.gserviceaccount.com", saId, projectId),
+						OauthScopes: []string{
+							"https://www.googleapis.com/auth/cloud-platform",
+						},
+					},
+				},
 			},
 		}
+
 		return c.CreateCluster(ctx, req)
 	} else {
 		l.Info("Cluster already exists")

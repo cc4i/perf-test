@@ -53,5 +53,5 @@ variable "firestore_collection" {
 variable "pt_admin_image" {
   type        = string
   description = "The image to deploy to Cloud Run"
-  default     = "asia-docker.pkg.dev/play-api-service/test-images/pt-admin@sha256:71179e6d9d0bb65879a12ba7e91156207404e8f4743d1aa532a2400e7db6efd1"
+  default     = "asia-docker.pkg.dev/play-api-service/test-images/pt-admin"
 }

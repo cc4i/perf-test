@@ -70,8 +70,13 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	} else {
 		// Set the Id for PtTask
 		if pTask.Status.Id == "" {
-			id := uuid.New()
-			pTask.Status.Id = id.String()
+			id := uuid.New().String()
+			// If the executionId is set in the annotation, use it
+			if eId, ok := pTask.Annotations["pttask/executionId"]; ok {
+				id = eId
+			}
+
+			pTask.Status.Id = id
 			l.Info("Set Id to ptTask", "Id", pTask.Status.Id)
 			if err = r.Client.Status().Update(context.Background(), &pTask); err != nil {
 				l.Info("failed to update status of ptTask")

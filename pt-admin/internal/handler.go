@@ -613,9 +613,9 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 
 	// Calcaulate the number of pods
 	var pt *api.PtTask
-	randomId := strconv.FormatInt(time.Now().UnixNano(), 10)
-	name := "pt-task-" + randomId
-	scenario := "pt-task-scenario-" + randomId
+	// randomId := strconv.FormatInt(time.Now().UnixNano(), 10)
+	name := "pt-task-" + executionId
+	scenario := "scenario-" + executionId
 	taurusImage := fmt.Sprintf("asia-docker.pkg.dev/%s/%s-pt-images/taurus-base", tr.ProjectId, tr.ProjectId)
 	locustImage := fmt.Sprintf("asia-docker.pkg.dev/%s/%s-pt-images/locust-worker", tr.ProjectId, tr.ProjectId)
 
@@ -630,6 +630,9 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 				Metadata: api.MyObjectMeta{
 					Name:      name,
 					Namespace: "pt-system",
+					Annotations: map[string]string{
+						"pttask/executionId": executionId,
+					},
 				},
 				Spec: api.PtTaskSpec{
 					Type: "Local",
@@ -692,7 +695,7 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 				l.Error(err, "json.Marshal", "pt", pt)
 				return pt, err
 			}
-			file := fmt.Sprintf("/var/tmp/pt-task-%s.yaml", randomId)
+			file := fmt.Sprintf("/var/tmp/pt-task-%s.yaml", executionId)
 			err = ioutil.WriteFile(file, buf, 0644)
 			if err != nil {
 				l.Error(err, "ioutil.WriteFile", "file", file)

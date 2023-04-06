@@ -97,7 +97,7 @@ message PtLaunchedTask {
 }
 
 // Task list for performance test
-message PtTaskRequestList {
+message PtLaunchedTaskList {
     // Task to be created
     repeated PtLaunchedTask launched_tasks = 1;
 }

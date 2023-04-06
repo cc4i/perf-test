@@ -72,6 +72,9 @@ type PtTaskWorkerMetrics struct {
 
 	// Average response time per endpoint: (endpoint)->(response time) :: GuageVec
 	AvgResponseTimes map[string]float64
+
+	// Number of requests per endpoint: (endpoint)->(number of requests) :: CounterVec
+	NumReqsPerEndpoint map[string]int
 }
 
 var (
@@ -157,6 +160,18 @@ var (
 			"scenario", //each scenario
 		},
 	)
+	// Number of requests per endpoint
+	pttaskNumReqsPerEndpoint = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gtools_perftest_pttask_num_requests_per_endpoint",
+			Help: "Number of requests per endpoint",
+		},
+		[]string{
+			"endpoint", //Which endpoint
+			"worker",   //name of worker node
+			"scenario", //each scenario
+		},
+	)
 )
 
 func updateReponseTimes(scenario string, llj LocustLdjson) {
@@ -183,6 +198,7 @@ func updateReponseTimes(scenario string, llj LocustLdjson) {
 				},
 			}
 		}
+		pttaskNumReqsPerEndpoint.WithLabelValues(stat.Name, llj.ClientId, scenario).Add(float64(stat.NumRequests))
 		pttaskAvgResponseTimes.WithLabelValues(stat.Name, llj.ClientId, scenario).Set(avg)
 	}
 }
@@ -423,8 +439,15 @@ func MonitorLocustDistributionWorker(scenario string, workerId string, caText64 
 
 func init() {
 	// Register custom metrics with the global prometheus registry
-	metrics.Registry.MustRegister(pttaskTotalUsers, pttaskTotalReqsPerSec, pttaskTotalErrors,
-		pttaskTotalMasters, pttaskMastersStatus, pttaskTotalWorkers, pttaskWorkersStatus,
-		pttaskAvgResponseTimes)
+	metrics.Registry.MustRegister(pttaskTotalUsers,
+		pttaskTotalReqsPerSec,
+		pttaskTotalErrors,
+		pttaskTotalMasters,
+		pttaskMastersStatus,
+		pttaskTotalWorkers,
+		pttaskWorkersStatus,
+		pttaskAvgResponseTimes,
+		pttaskNumReqsPerEndpoint,
+	)
 
 }
