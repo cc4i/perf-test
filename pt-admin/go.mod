@@ -9,6 +9,7 @@ require (
 	cloud.google.com/go/firestore v1.9.0
 	cloud.google.com/go/iam v0.12.0
 	cloud.google.com/go/pubsub v1.28.0
+	cloud.google.com/go/run v0.8.0
 	cloud.google.com/go/storage v1.30.1
 	cloud.google.com/go/workflows v1.10.0
 	github.com/gin-gonic/gin v1.9.0

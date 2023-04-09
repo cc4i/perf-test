@@ -62,12 +62,17 @@ message PtTaskRequest {
     int32 duration = 2;
     // Ramp up time for test
     int32 ramp_up = 3;
+    // The url of target site
+    optional string target_url = 5;
 
     // Task type for perforamnce test: Local, or Distribution
     PtTaskRequestType type = 4;
 
     // Traffics arragement
     repeated PtTaskRequestTracffic traffics = 10;
+
+    // Scripts for the task
+    PtTaskRequestScript scripts = 20;
 }
 
 // Launched Task for performance test with status and links

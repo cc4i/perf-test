@@ -256,11 +256,12 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 		// Create a new task
 		v1.POST("/pttask", func(c *gin.Context) {
 			// Trigger the workflow
-			c.String(http.StatusOK, "Create a new task")
+			c.ProtoBuf(http.StatusOK, "")
 		})
 
 		// List all tasks
 		v1.GET("/pttask", func(c *gin.Context) {
+
 			// c.String(http.StatusOK, "List all tasks")
 			// d := PtTask(ctx, c)
 			c.ProtoBuf(http.StatusOK, "")

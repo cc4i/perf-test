@@ -213,6 +213,14 @@ resource "google_cloud_run_service" "pt_admin_service" {
       container_concurrency = 10
       containers {
         image = "${var.pt_admin_image}"
+        env {
+          name  = "PROJECT_ID"
+          value = var.project_id
+        } 
+        env {
+          name  = "LOCATION"
+          value = var.region
+        }
         startup_probe {
           http_get {
             path = "/healthz"

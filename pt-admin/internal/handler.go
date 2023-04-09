@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,14 +21,19 @@ import (
 	cloudbuild "cloud.google.com/go/cloudbuild/apiv1/v2"
 	cloudbuildpb "cloud.google.com/go/cloudbuild/apiv1/v2/cloudbuildpb"
 	"cloud.google.com/go/container/apiv1/containerpb"
+	"cloud.google.com/go/pubsub"
+	run "cloud.google.com/go/run/apiv2"
+	runpb "cloud.google.com/go/run/apiv2/runpb"
 
 	// dashboard "cloud.google.com/go/monitoring/dashboard/apiv1"
 	// dashboardpb "cloud.google.com/go/monitoring/dashboard/apiv1/dashboardpb"
 	"cloud.google.com/go/storage"
 	wfexecpb "cloud.google.com/go/workflows/executions/apiv1/executionspb"
+
 	"com.google.gtools/pt-admin/api"
 	"com.google.gtools/pt-admin/internal/helper"
 	"github.com/gin-gonic/gin"
+
 	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -462,17 +468,6 @@ func ExecWorkflow(ctx context.Context, c *gin.Context) error {
 		return err
 	}
 
-	// Save executionId to Firestore
-	// _, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
-	// 	Id:             ex.Name,
-	// 	WorkflowName:   wf,
-	// 	Input:          pwf,
-	// 	StatusWorkflow: ex.State.String(),
-	// })
-	// if err != nil {
-	// 	l.Error(err, "failed to insert PtTransaction to Firestore")
-	// 	// return ex, err
-	// }
 	return nil
 
 }
@@ -1090,4 +1085,110 @@ func DestroyResources(ctx context.Context, c *gin.Context) error {
 	//TODO: delete VPC ?
 
 	return nil
+}
+
+func ProtoCreatePtTask(ctx context.Context, c *gin.Context) error {
+	l := log.FromContext(ctx).WithName("ProtoCreatePtTask")
+	l.Info("Reveived request from client to create a PtTask")
+
+	var ptr api.PtTaskRequest
+	buf, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		l.Error(err, "io.ReadAll")
+		return err
+	}
+	err = json.Unmarshal(buf, &ptr)
+	if err != nil {
+		l.Error(err, "json.Unmarshal", "buf", string(buf))
+		return err
+	}
+
+	// Get URL of CloudRun service
+	runService := os.Getenv("K_SERVICE")
+	projectId := os.Getenv("PROJECT_ID")
+	location := os.Getenv("LOCATION")
+	cloudrun, err := run.NewServicesClient(ctx)
+	if err != nil {
+		l.Error(err, "unable to create cloudrun client")
+		return err
+	}
+	req := &runpb.GetServiceRequest{
+		Name: fmt.Sprintf("projects/%s/locations/%s/services/%s", projectId, location, runService),
+	}
+	resp, err := cloudrun.GetService(ctx, req)
+	if err != nil {
+		l.Error(err, "unable to get cloudrun service")
+		return err
+	}
+
+	// Construct the input for the workflow
+	network := "pt-vpc-" + randString()
+	pwf := ProvisionWf{
+		Url:       resp.Uri,
+		ProjectId: projectId,
+		GKEs: []GKE{
+			{
+				AccountId:  "pt-service-account",
+				ProjectId:  projectId,
+				Cluster:    "pt-cluster-" + randString(),
+				IsMater:    "true",
+				Location:   location,
+				Network:    network,
+				Subnetwork: network,
+			},
+		},
+		VPC: VPC{
+			Mtu:       1460,
+			Network:   network,
+			ProjectId: projectId,
+		},
+		ServiceAccount: ServiceAccount{
+			AccountId: "pt-service-account",
+			ProjectId: projectId,
+		},
+		TaskRequest: TaskRequest{
+			ProjectId:     projectId,
+			ArchiveBucket: "pt-results-archive",
+			Executor:      "locust",
+			NumOfUsers:    int(ptr.TotalUsers),
+			Duration:      int(ptr.Duration),
+			RampUp:        int(ptr.RampUp),
+			TargetUrl:     *ptr.TargetUrl,
+			Script4Task:   string(ptr.Scripts.Data),
+		},
+	}
+	ibuf, err := json.Marshal(pwf)
+	if err != nil {
+		l.Error(err, "json.Marshal")
+		return err
+	}
+
+	// Send message to PubSub and trigger provisoning workflow
+	topic := "pt-provision-wf"
+	client, err := pubsub.NewClient(ctx, projectId)
+	if err != nil {
+		l.Error(err, "unable to create pubsub client")
+		return err
+	}
+	ret := client.Topic(topic).Publish(ctx, &pubsub.Message{
+		Data: ibuf,
+	})
+	_, err = ret.Get(ctx)
+	if err != nil {
+		l.Error(err, "unable to publish message to pubsub")
+		return err
+	}
+
+	return nil
+}
+
+// Generate a random string of a-z chars with len = 6
+func randString() string {
+	rand.Seed(time.Now().UnixNano())
+	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	b := make([]rune, 6)
+	for i := range b {
+		b[i] = chars[rand.Intn(len(chars))]
+	}
+	return string(b)
 }

@@ -12,7 +12,7 @@ main:
     - RecordExecution:
         call: http.patch
         args:
-            url: $${"https://" + input.url + "/v1/workflow/" +sys.get_env("GOOGLE_CLOUD_WORKFLOW_ID") +"/" + sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+            url: $${input.url + "/v1/workflow/" +sys.get_env("GOOGLE_CLOUD_WORKFLOW_ID") +"/" + sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
             auth:
                 type: OIDC
             body: $${input}
@@ -20,7 +20,7 @@ main:
     - BuildImages:
         call: http.post
         args:
-            url: $${"https://" + input.url + "/v1/build"}
+            url: $${input.url + "/v1/build"}
             auth:
                 type: OIDC
             body: $${input.taskRequest}
@@ -34,7 +34,7 @@ main:
         - Call4VPC:
             call: http.post
             args:
-                url: $${"https://" + input.url + "/v1/vpc"}
+                url: $${input.url + "/v1/vpc"}
                 auth:
                     type: OIDC
                 body: $${input.vpc}
@@ -44,7 +44,7 @@ main:
         - Call4ServiceAccount:
             call: http.post
             args:
-                url: $${"https://" + input.url + "/v1/sa"}
+                url: $${input.url + "/v1/sa"}
                 auth:
                     type: OIDC
                 body: $${input.serviceAccount}
@@ -52,7 +52,7 @@ main:
         - CallBindingSA:
             call: http.post
             args:
-                url: $${"https://" + input.url + "/v1/gkeap/bindingsa"}
+                url: $${input.url + "/v1/gkeap/bindingsa"}
                 auth:
                     type: OIDC
                 body: $${input.serviceAccount}
@@ -63,7 +63,7 @@ main:
         - Call4APCluster:
             call: http.post
             args:
-                url: $${"https://" + input.url + "/v1/gkeap"}
+                url: $${input.url + "/v1/gkeap"}
                 auth:
                     type: OIDC
                 body: $${input.gkes}
@@ -75,7 +75,7 @@ main:
         - CheckAPCluster:
             call: http.post
             args:
-                url: $${"https://" + input.url + "/v1/gkeap/status"}
+                url: $${input.url + "/v1/gkeap/status"}
                 auth:
                     type: OIDC
                 body: $${apCluster.body}
@@ -95,7 +95,7 @@ main:
         - Call4ClusterInfo:
             call: http.post
             args:
-                url: $${"https://" + input.url + "/v1/gkeap/info"}
+                url: $${input.url + "/v1/gkeap/info"}
                 auth:
                     type: OIDC
                 body: $${input.gkes}
@@ -117,7 +117,7 @@ main:
                 - ApplyManifest4SC:
                     call: http.post
                     args:
-                        url: $${"https://" + input.url + "/v1/gkeap/manifest/sc.yaml"}
+                        url: $${input.url + "/v1/gkeap/manifest/sc.yaml"}
                         auth:
                             type: OIDC
                         body: $${gke}
@@ -129,7 +129,7 @@ main:
                 - ApplyManifest4PVC:
                     call: http.post
                     args:
-                        url: $${"https://" + input.url + "/v1/gkeap/manifest/pvc.yaml"}
+                        url: $${input.url + "/v1/gkeap/manifest/pvc.yaml"}
                         auth:
                             type: OIDC
                         body: $${gke}
@@ -137,7 +137,7 @@ main:
                 - CheckPVC:
                     call: http.post
                     args:
-                        url: $${"https://" + input.url + "/v1/gkeap/pvc"}
+                        url: $${input.url + "/v1/gkeap/pvc"}
                         auth:
                             type: OIDC
                         body: $${gke}
@@ -154,7 +154,7 @@ main:
                 - ApplyManifest4PtOperator:
                     call: http.post
                     args:
-                        url: $${"https://" + input.url + "/v1/gkeap/manifest/pt-operator.yaml"}
+                        url: $${input.url + "/v1/gkeap/manifest/pt-operator.yaml"}
                         auth:
                             type: OIDC
                         body: $${gke}
@@ -162,7 +162,7 @@ main:
                 - CheckPtOperator:
                     call: http.post
                     args:
-                        url: $${"https://" + input.url + "/v1/gkeap/ptoperator"}
+                        url: $${input.url + "/v1/gkeap/ptoperator"}
                         auth:
                             type: OIDC
                         body: $${gke}
@@ -179,7 +179,7 @@ main:
                 - ApplyaPtTask:
                     call: http.post
                     args:
-                        url: $${"https://" + input.url + "/v1/apply/pttask/" + sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+                        url: $${input.url + "/v1/apply/pttask/" + sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
                         auth:
                             type: OIDC
                         body: $${input}
@@ -187,7 +187,7 @@ main:
     - CreateDashboard:
         call: http.post
         args:
-            url: $${"https://" + input.url + "/v1/dashboard/pttask/" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+            url: $${input.url + "/v1/dashboard/pttask/" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
             auth:
                 type: OIDC
             body: $${input}

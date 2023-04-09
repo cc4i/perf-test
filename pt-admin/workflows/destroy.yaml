@@ -6,7 +6,7 @@ main:
     - DestroyResource:
         call: http.post
         args:
-            url: $${"https://" + input.url + "/v1/destroy/" + input.projectId + "/" + input.executionId}
+            url: $${input.url + "/v1/destroy/" + input.projectId + "/" + input.executionId}
             auth:
                 type: OIDC
             body: $${input}
