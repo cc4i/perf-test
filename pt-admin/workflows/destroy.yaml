@@ -1,12 +1,19 @@
 # Desctroy curtain resources, which were created for PtTask
 
 main:
-    params: [input]
+    params: [msg]
     steps:
+    - Init:
+        assign:
+            - input: $${json.decode(base64.decode(msg.data.message.data))}
+    - PrintOutInput:
+        call: sys.log
+        args:
+            text: $${input}
     - DestroyResource:
         call: http.post
         args:
-            url: $${input.url + "/v1/destroy/" + input.projectId + "/" + input.executionId}
+            url: $${input.url + "/v1/destroy/" + input.projectId + "/" + input.correlationId}
             auth:
                 type: OIDC
             body: $${input}

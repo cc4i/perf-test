@@ -159,3 +159,14 @@ func CreateYaml2K8s(ctx context.Context, caText64 string, gkeEndpoint string, fi
 
 	return CreateBytes2K8s(ctx, caText64, gkeEndpoint, filebytes)
 }
+
+func DeletePtTask(ctx context.Context, caText64 string, gkeEndpoint string, name string, ns string) error {
+	l := log.FromContext(ctx).WithName("DeletePtTask")
+
+	_, clientSet, err := Kube2Client(ctx, caText64, gkeEndpoint)
+	if err != nil {
+		l.Error(err, "failed to get clientset")
+		return err
+	}
+	return clientSet.AppsV1().Deployments(ns).Delete(ctx, name, metav1.DeleteOptions{})
+}

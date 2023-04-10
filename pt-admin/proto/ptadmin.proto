@@ -6,7 +6,7 @@ import "google/protobuf/timestamp.proto";
 option go_package="/api";
 
 // Task type
-enum PtTaskRequestType {
+enum PtTaskType {
     // Local task type
     LOCAL = 0;
 
@@ -16,21 +16,34 @@ enum PtTaskRequestType {
 }
 
 // Task status
-enum PtTaskRequestStatus {
+enum PtLaunchedTaskStatus {
     // Task is pending
     PENDING = 0;
 
-    // Task is provisioned
-    PROVISIONED = 1;
-
     // Task is running
-    RUNNING = 2;
+    RUNNING = 1;
 
     // Task is finished
-    FINISHED = 3;
+    FINISHED = 2;
 
     // Task is failed
-    FAILED = 4;
+    FAILED = 3;
+
+    // Task is failed
+    CENCELED = 4;
+}
+
+// Status of provisioning workflow
+enum StatusWorkflow {
+
+    // Workflow is provisioning
+    PROVISIONING = 0;
+
+    // Workflow is provisioning finished
+    PROVISIONING_FINISHED = 1;
+
+    // Workflow is provisioning failed
+    PROVISIONING_FAILED = 2;
 
 }
 
@@ -46,12 +59,12 @@ message PtTaskRequestTracffic {
 // Scripts for the task
 message PtTaskRequestScript {
     // Script name
-    string name = 1;
+    optional string name = 1;
     // Script type: file, zip, gz, tar, etc; "file is default"
     optional string type = 2;
 
     // Script content
-    bytes data = 3;
+    string data = 3;
 }
 
 // Task for performance test
@@ -63,10 +76,10 @@ message PtTaskRequest {
     // Ramp up time for test
     int32 ramp_up = 3;
     // The url of target site
-    optional string target_url = 5;
+    optional string target_url = 4;
 
     // Task type for perforamnce test: Local, or Distribution
-    PtTaskRequestType type = 4;
+    PtTaskType type = 6;
 
     // Traffics arragement
     repeated PtTaskRequestTracffic traffics = 10;
@@ -78,27 +91,31 @@ message PtTaskRequest {
 // Launched Task for performance test with status and links
 message PtLaunchedTask {
     // Task id
-    string id = 1;
+    string correlationId = 1;
     // Task
     PtTaskRequest task = 2;
+
     // Task status
-    PtTaskRequestStatus status = 3;
+    PtLaunchedTaskStatus task_status = 3;
+
+    // Status of provisioning workflow 
+    StatusWorkflow provision_status = 4;
 
     // Created time
     google.protobuf.Timestamp created = 6;
 
     // Finished time
-    google.protobuf.Timestamp finished = 7;
+    optional google.protobuf.Timestamp finished = 7;
 
     // last updated time
-    google.protobuf.Timestamp last_updated = 8;
+    optional google.protobuf.Timestamp last_updated = 8;
 
     // Link to metrics dashboard
-    string metrics_link = 10;
+    optional string metrics_link = 10;
     // Link to logs
-    string logs_link = 11;
+    optional string logs_link = 11;
     // Link to download the test results
-    string download_link = 12;
+    optional string download_link = 12;
 }
 
 // Task list for performance test

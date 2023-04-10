@@ -43,11 +43,13 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
+
 		// Delete a VPC
 		v1.DELETE("/vpc", func(c *gin.Context) {
 			l.Info("Delete a VPC")
 			c.JSON(http.StatusOK, map[string]string{"message": "Delete a VPC"})
 		})
+
 		// Create Service Account
 		v1.POST("/sa", func(c *gin.Context) {
 			l.Info("Create Service Account")
@@ -58,6 +60,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
+
 		// Generate a key of service account
 		v1.POST("/sa/key", func(c *gin.Context) {
 			l.Info("Generate a key of service account")
@@ -79,6 +82,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
+
 		// Check status of GKE Autopilot cluster
 		v1.POST("/gkeap/status", func(c *gin.Context) {
 			l.Info("Check status of creating GKE Autopilot cluster")
@@ -94,6 +98,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 
 			}
 		})
+
 		// Retrieve cluster info of GKE Autopilot cluster
 		v1.POST("/gkeap/info", func(c *gin.Context) {
 			l.Info("Retrieve cluster info of GKE Autopilot cluster")
@@ -104,6 +109,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
+
 		// Apply a manifest to GKE Autopilot cluster
 		v1.POST("/gkeap/manifest/:file", func(c *gin.Context) {
 			l.Info("Apply a manifest to GKE Autopilot cluster")
@@ -114,6 +120,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, []string{"success"})
 			}
 		})
+
 		// Binding Workload Identity role to Kuberneretes service account
 		v1.POST("/gkeap/bindingsa", func(c *gin.Context) {
 			l.Info("Binding Workload Identity role to Kuberneretes service account")
@@ -124,6 +131,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, []string{"success"})
 			}
 		})
+
 		// Get the status of PVC
 		v1.POST("/gkeap/pvc", func(c *gin.Context) {
 			l.Info("Get the status of PVC")
@@ -134,6 +142,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
+
 		// Get the status of Pt-Operator
 		v1.POST("/gkeap/ptoperator", func(c *gin.Context) {
 			l.Info("Get the status of Pt-Operator")
@@ -144,6 +153,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, resp)
 			}
 		})
+
 		// Execeute the workflow to provision everything
 		v1.POST("/workflow/provision/:wf", func(c *gin.Context) {
 			l.Info("Execeute the workflow of provisioning everything")
@@ -154,6 +164,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, []string{"success"})
 			}
 		})
+
 		// Record the execution of workflow into Firestore
 		v1.PATCH("/workflow/:wf/:executionId", func(c *gin.Context) {
 			l.Info("Record the execution of workflow into Firestore")
@@ -164,8 +175,9 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, []string{"success"})
 			}
 		})
+
 		// TODO: Destroy everything we just provisioned for PtTask, expected: ServiceAccount, GCS, Firestore
-		v1.POST("/workflow/destroy/:projectId/:executionId", func(c *gin.Context) {
+		v1.POST("/workflow/destroy/:projectId/:correlationId", func(c *gin.Context) {
 			l.Info("Execeute the workflow of destroy related resources")
 			err := DestroyResources(ctx, c)
 			if err != nil {
@@ -255,28 +267,50 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 		///////////////////////////////////////////////////////
 		// Create a new task
 		v1.POST("/pttask", func(c *gin.Context) {
-			// Trigger the workflow
-			c.ProtoBuf(http.StatusOK, "")
+			l.Info("Create a new PtTask")
+			pt, err := CreatePtTask(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, pt)
+			}
 		})
 
 		// List all tasks
 		v1.GET("/pttask", func(c *gin.Context) {
-
-			// c.String(http.StatusOK, "List all tasks")
-			// d := PtTask(ctx, c)
-			c.ProtoBuf(http.StatusOK, "")
+			l.Info("List all PtTasks")
+			pts, err := ListPtTasks(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, pts)
+			}
 		})
 
 		// Get a task
-		v1.GET("/pttask/:taskId", func(c *gin.Context) {
-			taskId := c.Param("taskId")
-			c.String(http.StatusOK, "The detail of task: "+taskId)
+		v1.GET("/pttask/:correlationId", func(c *gin.Context) {
+			correlationId := c.Param("correlationId")
+			l.Info("Get a PtTask", "correlationId", correlationId)
+
+			pt, err := GetPtTask(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, pt)
+			}
 		})
 
 		// Delete a task
-		v1.DELETE("/pttask/:taskId", func(c *gin.Context) {
-			taskId := c.Param("taskId")
-			c.String(http.StatusOK, "Delete the task: "+taskId)
+		v1.DELETE("/pttask/:correlationId", func(c *gin.Context) {
+			correlationId := c.Param("correlationId")
+			l.Info("Delete a PtTask", "correlationId", correlationId)
+
+			err := DeletePtTask(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, []string{"success"})
+			}
 		})
 
 	}

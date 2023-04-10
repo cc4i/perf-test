@@ -187,7 +187,7 @@ main:
     - CreateDashboard:
         call: http.post
         args:
-            url: $${input.url + "/v1/dashboard/pttask/" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ sys.get_env("GOOGLE_CLOUD_WORKFLOW_EXECUTION_ID")}
+            url: $${input.url + "/v1/dashboard/pttask/" + sys.get_env("GOOGLE_CLOUD_PROJECT_ID") + "/"+ input.correlationId}
             auth:
                 type: OIDC
             body: $${input}

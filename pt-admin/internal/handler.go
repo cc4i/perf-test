@@ -24,6 +24,7 @@ import (
 	"cloud.google.com/go/pubsub"
 	run "cloud.google.com/go/run/apiv2"
 	runpb "cloud.google.com/go/run/apiv2/runpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	// dashboard "cloud.google.com/go/monitoring/dashboard/apiv1"
 	// dashboardpb "cloud.google.com/go/monitoring/dashboard/apiv1/dashboardpb"
@@ -34,6 +35,7 @@ import (
 	"com.google.gtools/pt-admin/internal/helper"
 	"github.com/gin-gonic/gin"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -47,6 +49,7 @@ type ProvisionWf struct {
 	ServiceAccount ServiceAccount `json:"serviceAccount"`
 	GKEs           []GKE          `json:"gkes"`
 	TaskRequest    TaskRequest    `json:"taskRequest,omitempty"`
+	CorrelationId  string         `json:"correlationId,omitempty"`
 }
 
 type VPC struct {
@@ -432,7 +435,8 @@ func RecordWorkflow(ctx context.Context, c *gin.Context) error {
 
 	// Save executionId to Firestore
 	_, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
-		Id:             eId,
+		CorrelationId:  pwf.CorrelationId,
+		ExecutionId:    eId,
 		WorkflowName:   wf,
 		Input:          pwf,
 		StatusWorkflow: "ACTIVE",
@@ -489,7 +493,7 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 	l := log.FromContext(ctx).WithName("CreateDashboard")
 	dId := ""
 	projectId := c.Param("projectId")
-	executionId := c.Param("executionId")
+	correlationId := c.Param("correlationId")
 	// var token *oauth2.Token
 	url := fmt.Sprintf("https://monitoring.googleapis.com/v1/projects/%s/dashboards", projectId)
 	// Get access token
@@ -534,7 +538,7 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 	// -H 'Content-Type: application/json'
 	// -X POST https://monitoring.googleapis.com/v1/projects/${PROJECT_ID}/dashboards
 	// net/http post
-	dFile, err := replaceEnvs(ctx, "dashboard.json", "", "", "", executionId)
+	dFile, err := replaceEnvs(ctx, "dashboard.json", "", "", "", correlationId)
 	if err != nil {
 		l.Error(err, "replaceEnvs")
 		return dId, err
@@ -583,7 +587,7 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 	dUrl := "https://console.cloud.google.com/monitoring/dashboards/builder/" + dId + "?project=" + projectId
 
 	// Save dashboard URL to Firestore
-	_, err = helper.UpdateDashboardUrl(ctx, projectId, "pt-transactions", executionId, dUrl)
+	_, err = helper.UpdateDashboardUrl(ctx, projectId, "pt-transactions", correlationId, dUrl)
 	if err != nil {
 		l.Error(err, "failed to update dashboardUrl to Firestore")
 	}
@@ -706,7 +710,7 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 	}
 
 	// Save PtTask to Firestore
-	_, err = helper.UpdatePtTask(ctx, tr.ProjectId, "pt-transactions", executionId, *pt)
+	_, err = helper.UpdatePtTask(ctx, tr.ProjectId, "pt-transactions", pwf.CorrelationId, *pt)
 	if err != nil {
 		l.Error(err, "failed to update PtTask to Firestore")
 	}
@@ -1050,26 +1054,26 @@ func save2gcs(ctx context.Context, projectId string, srcFile string) (string, er
 func DestroyResources(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx)
 	projectId := c.Param("projectId")
-	executionId := c.Param("executionId")
+	correlationId := c.Param("correlationId")
 	ti := &helper.TInfra{}
 
-	trans, err := helper.Read(ctx, projectId, "pt-transactions", executionId)
+	trans, err := helper.Read(ctx, projectId, "pt-transactions", correlationId)
 	if err != nil {
-		l.Error(err, "unable to read transaction", "projectId", projectId, "executionId", executionId)
+		l.Error(err, "unable to read transaction", "projectId", projectId, "correlationId", correlationId)
 		return err
 	}
-	l.Info("transaction read", "projectId", projectId, "executionId", executionId, "trans.id", trans.Id)
+	l.Info("transaction read", "projectId", projectId, "executionId", trans.ExecutionId, "trans.correlationId", trans.CorrelationId)
 
 	// TODO: delete all resources created by for PT
 	// delete GKE Autopilot cluster
 	var input ProvisionWf
 	buf, err := json.Marshal(trans.Input)
 	if err != nil {
-		l.Error(err, "unable to marshal transaction input", "projectId", projectId, "executionId", executionId)
+		l.Error(err, "unable to marshal transaction input", "projectId", projectId, "executionId", trans.ExecutionId)
 	}
 	err = json.Unmarshal(buf, &input)
 	if err != nil {
-		l.Error(err, "unable to unmarshal transaction input", "projectId", projectId, "executionId", executionId)
+		l.Error(err, "unable to unmarshal transaction input", "projectId", projectId, "executionId", trans.ExecutionId)
 	}
 
 	for _, gke := range input.GKEs {
@@ -1087,30 +1091,31 @@ func DestroyResources(ctx context.Context, c *gin.Context) error {
 	return nil
 }
 
-func ProtoCreatePtTask(ctx context.Context, c *gin.Context) error {
-	l := log.FromContext(ctx).WithName("ProtoCreatePtTask")
+func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, error) {
+	l := log.FromContext(ctx).WithName("CreatePtTask")
 	l.Info("Reveived request from client to create a PtTask")
 
 	var ptr api.PtTaskRequest
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		l.Error(err, "io.ReadAll")
-		return err
+		return nil, err
 	}
 	err = json.Unmarshal(buf, &ptr)
 	if err != nil {
 		l.Error(err, "json.Unmarshal", "buf", string(buf))
-		return err
+		return nil, err
 	}
 
 	// Get URL of CloudRun service
 	runService := os.Getenv("K_SERVICE")
 	projectId := os.Getenv("PROJECT_ID")
 	location := os.Getenv("LOCATION")
+	crId := uuid.New().String()
 	cloudrun, err := run.NewServicesClient(ctx)
 	if err != nil {
 		l.Error(err, "unable to create cloudrun client")
-		return err
+		return nil, err
 	}
 	req := &runpb.GetServiceRequest{
 		Name: fmt.Sprintf("projects/%s/locations/%s/services/%s", projectId, location, runService),
@@ -1118,14 +1123,15 @@ func ProtoCreatePtTask(ctx context.Context, c *gin.Context) error {
 	resp, err := cloudrun.GetService(ctx, req)
 	if err != nil {
 		l.Error(err, "unable to get cloudrun service")
-		return err
+		return nil, err
 	}
 
 	// Construct the input for the workflow
 	network := "pt-vpc-" + randString()
 	pwf := ProvisionWf{
-		Url:       resp.Uri,
-		ProjectId: projectId,
+		Url:           resp.Uri,
+		ProjectId:     projectId,
+		CorrelationId: crId,
 		GKEs: []GKE{
 			{
 				AccountId:  "pt-service-account",
@@ -1154,13 +1160,14 @@ func ProtoCreatePtTask(ctx context.Context, c *gin.Context) error {
 			Duration:      int(ptr.Duration),
 			RampUp:        int(ptr.RampUp),
 			TargetUrl:     *ptr.TargetUrl,
+			IsLocal:       api.PtTaskType(ptr.Type.Number()) == api.PtTaskType_LOCAL,
 			Script4Task:   string(ptr.Scripts.Data),
 		},
 	}
 	ibuf, err := json.Marshal(pwf)
 	if err != nil {
 		l.Error(err, "json.Marshal")
-		return err
+		return nil, err
 	}
 
 	// Send message to PubSub and trigger provisoning workflow
@@ -1168,7 +1175,7 @@ func ProtoCreatePtTask(ctx context.Context, c *gin.Context) error {
 	client, err := pubsub.NewClient(ctx, projectId)
 	if err != nil {
 		l.Error(err, "unable to create pubsub client")
-		return err
+		return nil, err
 	}
 	ret := client.Topic(topic).Publish(ctx, &pubsub.Message{
 		Data: ibuf,
@@ -1176,10 +1183,19 @@ func ProtoCreatePtTask(ctx context.Context, c *gin.Context) error {
 	_, err = ret.Get(ctx)
 	if err != nil {
 		l.Error(err, "unable to publish message to pubsub")
-		return err
+		return nil, err
 	}
 
-	return nil
+	// Respond to client
+	launchedTask := &api.PtLaunchedTask{
+		CorrelationId:   crId,
+		TaskStatus:      api.PtLaunchedTaskStatus_PENDING,
+		ProvisionStatus: api.StatusWorkflow_PROVISIONING,
+		Created:         timestamppb.Now(),
+		Task:            &ptr,
+	}
+
+	return launchedTask, nil
 }
 
 // Generate a random string of a-z chars with len = 6
@@ -1191,4 +1207,118 @@ func randString() string {
 		b[i] = chars[rand.Intn(len(chars))]
 	}
 	return string(b)
+}
+
+func GetPtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, error) {
+	l := log.FromContext(ctx).WithName("GetPtTask")
+	correlationId := c.Param("correlationId")
+	l.Info("Get a PtTask by correlationId", "correlationId", correlationId)
+
+	projectId := os.Getenv("PROJECT_ID")
+	ptt, err := helper.Read(ctx, projectId, "pt-transactions", correlationId)
+	if err != nil {
+		l.Error(err, "unable to read pt-transactions from firestore")
+		return nil, err
+	}
+
+	launchedTask := &api.PtLaunchedTask{
+		CorrelationId:   ptt.CorrelationId,
+		TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.StatusPtTask]),
+		ProvisionStatus: api.StatusWorkflow(api.StatusWorkflow_value[ptt.StatusWorkflow]),
+		Created:         ptt.Created,
+		Finished:        ptt.Finished,
+		LastUpdated:     ptt.LastUpdated,
+		MetricsLink:     ptt.MetricsLink,
+		LogsLink:        ptt.LogsLink,
+		DownloadLink:    ptt.DownloadLink,
+	}
+
+	return launchedTask, nil
+}
+
+func ListPtTasks(ctx context.Context, c *gin.Context) ([]*api.PtLaunchedTask, error) {
+	l := log.FromContext(ctx).WithName("ListPtTasks")
+	l.Info("Retrieve all PtTasks")
+	projectId := os.Getenv("PROJECT_ID")
+	pts, err := helper.ReadAll(ctx, projectId, "pt-transactions")
+	if err != nil {
+		l.Error(err, "unable to read pt-transactions from firestore")
+		return nil, err
+	}
+
+	var launchedTasks []*api.PtLaunchedTask
+	for _, ptt := range pts {
+		launchedTask := &api.PtLaunchedTask{
+			CorrelationId:   ptt.CorrelationId,
+			TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.StatusPtTask]),
+			ProvisionStatus: api.StatusWorkflow(api.StatusWorkflow_value[ptt.StatusWorkflow]),
+			Created:         ptt.Created,
+			Finished:        ptt.Finished,
+			LastUpdated:     ptt.LastUpdated,
+			MetricsLink:     ptt.MetricsLink,
+			LogsLink:        ptt.LogsLink,
+			DownloadLink:    ptt.DownloadLink,
+		}
+
+		launchedTasks = append(launchedTasks, launchedTask)
+	}
+
+	return launchedTasks, nil
+}
+
+func DeletePtTask(ctx context.Context, c *gin.Context) error {
+	l := log.FromContext(ctx).WithName("DeletePtTask")
+	correlationId := c.Param("correlationId")
+	l.Info("Delete a PtTask by correlationId", "correlationId", correlationId)
+	// ti := &helper.TInfra{}
+	projectId := os.Getenv("PROJECT_ID")
+	ptt, err := helper.Read(ctx, projectId, "pt-transactions", correlationId)
+	if err != nil {
+		l.Error(err, "unable to read pt-transactions from firestore")
+		return err
+	}
+
+	var input ProvisionWf
+	buf, err := json.Marshal(ptt.Input)
+	if err != nil {
+		l.Error(err, "unable to marshal transaction input", "projectId", projectId, "executionId", ptt.ExecutionId)
+	}
+	err = json.Unmarshal(buf, &input)
+	if err != nil {
+		l.Error(err, "unable to unmarshal transaction input", "projectId", projectId, "executionId", ptt.ExecutionId)
+	}
+
+	topic := "pt-destroy-wf"
+	client, err := pubsub.NewClient(ctx, projectId)
+	if err != nil {
+		l.Error(err, "unable to create pubsub client")
+		return err
+	}
+	ret := client.Topic(topic).Publish(ctx, &pubsub.Message{
+		Data: []byte("{\"executionId\": \"" + ptt.ExecutionId + "\", \"correlationId\": \"" + ptt.CorrelationId + "\", \"projectId\": " + projectId + "}"),
+	})
+	_, err = ret.Get(ctx)
+	if err != nil {
+		l.Error(err, "unable to publish message to pubsub")
+		return err
+	}
+
+	// for _, gke := range input.GKEs {
+	// 	if gke.IsMater == "true" {
+	// 		ca, err := ti.GetClusterCaCertificate(ctx, gke.ProjectId, gke.Cluster, gke.Location)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		ip, err := ti.GetClusterEndpoint(ctx, gke.ProjectId, gke.Cluster, gke.Location)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		err = helper.DeletePtTask(ctx, ca, ip, ptt.PtTask.Metadata.Name, ptt.PtTask.Metadata.Namespace)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 	}
+	// }
+
+	return nil
 }

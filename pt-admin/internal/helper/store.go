@@ -5,12 +5,15 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"com.google.gtools/pt-admin/api"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type PtTransaction struct {
+	// Generated Id
+	CorrelationId string `json:"correlationId"`
 	// Execution Id of the Workflow
-	Id string `json:"id"`
+	ExecutionId string `json:"executionId"`
 	// Name of the Workflow
 	WorkflowName string `json:"workflowName"`
 	// Input of the Workflow
@@ -21,8 +24,19 @@ type PtTransaction struct {
 	PtTask api.PtTask `json:"ptTask,omitempty"`
 	// Status of Performance Testing Task
 	StatusPtTask string `json:"statusPtTask,omitempty"`
-	// Dashboard URL of the Performance Testing Task
-	DashboardUrl string `json:"dashboardUrl,omitempty"`
+
+	// Created time
+	Created *timestamppb.Timestamp `json:"created,omitempty"`
+	// Finished time
+	Finished *timestamppb.Timestamp `json:"finished,omitempty"`
+	// last updated time
+	LastUpdated *timestamppb.Timestamp `json:"last_updated,omitempty"`
+	// Link to metrics dashboard
+	MetricsLink *string `json:"metrics_link,omitempty"`
+	// Link to logs
+	LogsLink *string `json:"logs_link,omitempty"`
+	// Link to download the test results
+	DownloadLink *string `json:"download_link,omitempty"`
 }
 
 // Store the value into the collection in Firestore
@@ -35,7 +49,7 @@ func Insert(ctx context.Context, projectId string, collection string, ptt PtTran
 	}
 	defer client.Close()
 
-	ret, err := client.Collection(collection).Doc(ptt.Id).Create(ctx, ptt)
+	ret, err := client.Collection(collection).Doc(ptt.CorrelationId).Create(ctx, ptt)
 	if err != nil {
 		l.Error(err, "failed to add doc")
 		return nil, err
@@ -67,6 +81,32 @@ func Read(ctx context.Context, projectId string, collection string, id string) (
 	return &pt, nil
 }
 
+func ReadAll(ctx context.Context, projectId string, collection string) ([]PtTransaction, error) {
+	l := log.FromContext(ctx).WithName("ReadAll")
+	l.Info("Read all values from a collection", "collection", collection)
+	client, err := firestore.NewClient(ctx, projectId)
+	if err != nil {
+		l.Error(err, "firestore new error")
+	}
+	defer client.Close()
+
+	ds, err := client.Collection(collection).Documents(ctx).GetAll()
+	if err != nil {
+		l.Error(err, "failed to get docs")
+		return nil, err
+	}
+	var pts []PtTransaction
+	for _, d := range ds {
+		var pt PtTransaction
+		err = d.DataTo(&pt)
+		if err != nil {
+			l.Error(err, "failed to convert data")
+		}
+		pts = append(pts, pt)
+	}
+	return pts, nil
+}
+
 // Update dashboard url of the collection in Firestore
 func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl string) (*firestore.WriteResult, error) {
 	l := log.FromContext(ctx).WithName("UpdateDashboardUrl")
@@ -88,7 +128,7 @@ func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl str
 		l.Error(err, "failed to convert data")
 		return nil, err
 	}
-	orgin.DashboardUrl = dUrl
+	orgin.MetricsLink = &dUrl
 
 	// Update the value
 	return client.Collection(collection).Doc(id).Set(ctx, orgin)
