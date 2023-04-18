@@ -436,10 +436,11 @@ func RecordWorkflow(ctx context.Context, c *gin.Context) error {
 	// Save executionId to Firestore
 	_, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
 		CorrelationId:  pwf.CorrelationId,
+		Created:        timestamppb.Now(),
 		ExecutionId:    eId,
 		WorkflowName:   wf,
 		Input:          pwf,
-		StatusWorkflow: "ACTIVE",
+		WorkflowStatus: api.WorkflowStatus_PROVISIONING.String(),
 	})
 	if err != nil {
 		l.Error(err, "failed to insert PtTransaction to Firestore")
@@ -1268,8 +1269,8 @@ func GetPtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, error)
 
 	launchedTask := &api.PtLaunchedTask{
 		CorrelationId:   ptt.CorrelationId,
-		TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.StatusPtTask]),
-		ProvisionStatus: api.WorkflowStatus(api.WorkflowStatus_value[ptt.StatusWorkflow]),
+		TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.PtTaskStatus]),
+		ProvisionStatus: api.WorkflowStatus(api.WorkflowStatus_value[ptt.WorkflowStatus]),
 		Created:         ptt.Created,
 		Finished:        ptt.Finished,
 		LastUpdated:     ptt.LastUpdated,
@@ -1304,8 +1305,8 @@ func ListPtTasks(ctx context.Context, c *gin.Context) ([]*api.PtLaunchedTask, er
 	for _, ptt := range pts {
 		launchedTask := &api.PtLaunchedTask{
 			CorrelationId:   ptt.CorrelationId,
-			TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.StatusPtTask]),
-			ProvisionStatus: api.WorkflowStatus(api.WorkflowStatus_value[ptt.StatusWorkflow]),
+			TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.PtTaskStatus]),
+			ProvisionStatus: api.WorkflowStatus(api.WorkflowStatus_value[ptt.WorkflowStatus]),
 			Created:         ptt.Created,
 			Finished:        ptt.Finished,
 			LastUpdated:     ptt.LastUpdated,

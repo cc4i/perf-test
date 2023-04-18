@@ -19,11 +19,11 @@ type PtTransaction struct {
 	// Input of the Workflow
 	Input interface{} `json:"input"`
 	// Status of the Workflow
-	StatusWorkflow string `json:"statusWorkflow"`
+	WorkflowStatus string `json:"workflowStatus"`
 	// PtTask
 	PtTask api.PtTask `json:"ptTask,omitempty"`
 	// Status of Performance Testing Task
-	StatusPtTask string `json:"statusPtTask,omitempty"`
+	PtTaskStatus string `json:"ptTaskStatus,omitempty"`
 
 	// Created time
 	Created *timestamppb.Timestamp `json:"created,omitempty"`
@@ -129,6 +129,7 @@ func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl str
 		return nil, err
 	}
 	orgin.MetricsLink = &dUrl
+	orgin.LastUpdated = timestamppb.Now()
 
 	// Update the value
 	return client.Collection(collection).Doc(id).Set(ctx, orgin)
@@ -156,13 +157,13 @@ func UpdatePtTask(ctx context.Context, projectId, collection, id string, ptTask 
 		return nil, err
 	}
 	orgin.PtTask = ptTask
-
+	orgin.LastUpdated = timestamppb.Now()
 	// Update the value
 	return client.Collection(collection).Doc(id).Set(ctx, orgin)
 
 }
 
-func UpdateStatusPtTask(ctx context.Context, projectId, collection, id, status string) (*firestore.WriteResult, error) {
+func UpdatePtTaskStatus(ctx context.Context, projectId, collection, id, status string) (*firestore.WriteResult, error) {
 	l := log.FromContext(ctx).WithName("UpdateStatusPtTask")
 	l.Info("Update status of PtStatus", "collection", collection, "id", id, "status", status)
 	client, err := firestore.NewClient(ctx, projectId)
@@ -182,7 +183,8 @@ func UpdateStatusPtTask(ctx context.Context, projectId, collection, id, status s
 		l.Error(err, "failed to convert data")
 		return nil, err
 	}
-	orgin.StatusPtTask = status
+	orgin.PtTaskStatus = status
+	orgin.LastUpdated = timestamppb.Now()
 
 	// Update the value
 	return client.Collection(collection).Doc(id).Set(ctx, orgin)
