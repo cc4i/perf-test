@@ -12,6 +12,7 @@ require (
 	cloud.google.com/go/run v0.8.0
 	cloud.google.com/go/storage v1.30.1
 	cloud.google.com/go/workflows v1.10.0
+	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-gonic/gin v1.9.0
 	github.com/google/uuid v1.3.0
 	golang.org/x/oauth2 v0.6.0

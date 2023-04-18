@@ -93,7 +93,7 @@ type PtTaskTraffic struct {
 	// The region where GKE cluster is provisioned
 	Region string `json:"region"`
 	// The percentage for traffic: currency * precent/100
-	Percent int `json:"percent"`
+	Percent int `json:"percent,omitempty"`
 }
 
 // PtTaskTestingOutput defines the testing output for a scenario

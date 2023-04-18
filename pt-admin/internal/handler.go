@@ -612,7 +612,6 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 
 	// Calcaulate the number of pods
 	var pt *api.PtTask
-	// randomId := strconv.FormatInt(time.Now().UnixNano(), 10)
 	name := "pt-task-" + executionId
 	scenario := "scenario-" + executionId
 	taurusImage := fmt.Sprintf("asia-docker.pkg.dev/%s/%s-pt-images/taurus-base", tr.ProjectId, tr.ProjectId)
@@ -621,52 +620,79 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 	// gzPath, _ := save2gcs(ctx, tr.ProjectId, tr.Script4Task)
 	if tr.Executor == "locust" {
 		l.Info("Locust PtTask")
+		pt = &api.PtTask{
+			Kind:       "PtTask",
+			APIVersion: "perftest.com.google.gtools/v1",
+			Metadata: api.MyObjectMeta{
+				Name:      name,
+				Namespace: "pt-system",
+				Annotations: map[string]string{
+					"pttask/executionId": executionId,
+				},
+			},
+			Spec: api.PtTaskSpec{
+				Type: "Local",
+				Execution: []api.PtTaskExecution{
+					{
+						Executor:    tr.Executor,
+						Concurrency: int(tr.NumOfUsers),
+						HoldFor:     strconv.Itoa(tr.Duration) + "m",
+						RampUp:      strconv.Itoa(tr.RampUp) + "s",
+						Scenario:    scenario,
+						Master:      true,
+						Workers:     int(tr.NumOfUsers/1000) + 1,
+					},
+				},
+				Scenarios: map[string]api.PtTaskScenario{
+					scenario: {
+						Script:         "locustfile.py",
+						DefaultAddress: tr.TargetUrl,
+					},
+				},
+				Images: map[string]api.PtTaskImages{
+					scenario: {
+						MasterImage: taurusImage,
+						WorkerImage: locustImage,
+					},
+				},
+				TestingOutput: api.PtTaskTestingOutput{
+					LogDir: "/taurus-logs",
+					Bucket: tr.ArchiveBucket,
+				},
+			},
+		}
 		if tr.IsLocal {
-			l.Info("Local Locust PtTask")
-			pt = &api.PtTask{
-				Kind:       "PtTask",
-				APIVersion: "perftest.com.google.gtools/v1",
-				Metadata: api.MyObjectMeta{
-					Name:      name,
-					Namespace: "pt-system",
-					Annotations: map[string]string{
-						"pttask/executionId": executionId,
-					},
-				},
-				Spec: api.PtTaskSpec{
-					Type: "Local",
-					Execution: []api.PtTaskExecution{
-						{
-							Executor:    tr.Executor,
-							Concurrency: int(tr.NumOfUsers),
-							HoldFor:     strconv.Itoa(tr.Duration) + "m",
-							RampUp:      strconv.Itoa(tr.RampUp) + "s",
-							Scenario:    scenario,
-							Master:      true,
-							Workers:     int(tr.NumOfUsers / 1000),
-						},
-					},
-					Scenarios: map[string]api.PtTaskScenario{
-						scenario: {
-							Script:         "locustfile.py",
-							DefaultAddress: tr.TargetUrl,
-						},
-					},
-					Images: map[string]api.PtTaskImages{
-						scenario: {
-							MasterImage: taurusImage,
-							WorkerImage: locustImage,
-						},
-					},
-					TestingOutput: api.PtTaskTestingOutput{
-						LogDir: "/taurus-logs",
-						Bucket: tr.ArchiveBucket,
-					},
-				},
-			}
+			l.Info("Locust PtTask is local...")
 		} else {
-			l.Info("Distributed Locust PtTask")
-			// TODO: add distributed locust?!
+			l.Info("Locust PtTask is distributed...")
+			for _, gke := range pwf.GKEs {
+				if gke.IsMater == "false" {
+					ti := &helper.TInfra{}
+					ca, err := ti.GetClusterCaCertificate(ctx, gke.ProjectId, gke.Cluster, gke.Location)
+					if err != nil {
+						return pt, err
+					}
+
+					ip, err := ti.GetClusterEndpoint(ctx, gke.ProjectId, gke.Cluster, gke.Location)
+					if err != nil {
+						return pt, err
+					}
+					gke.Endpoint = ip
+
+					pt.Spec.Traffics = map[string][]api.PtTaskTraffic{
+						scenario: {
+							{
+								GKECA64:     ca,
+								GKEEndpoint: ip,
+								Region:      gke.Location,
+								//TODO: Percent of traffic to this cluster, currently 100% due Locust limitation
+								Percent: 100,
+							},
+						},
+					}
+				}
+			}
+
 		}
 	} else if tr.Executor == "jmeter" {
 		l.Info("Jmeter PtTask, still under development")
@@ -1127,7 +1153,7 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 	}
 
 	// Construct the input for the workflow
-	network := "pt-vpc-" + randString()
+	network := "pt-vpc-9uej2d" // + randString()
 	pwf := ProvisionWf{
 		Url:           resp.Uri,
 		ProjectId:     projectId,
@@ -1136,7 +1162,7 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 			{
 				AccountId:  "pt-service-account",
 				ProjectId:  projectId,
-				Cluster:    "pt-cluster-" + randString(),
+				Cluster:    "pt-cluster-9uej2d", // + randString()
 				IsMater:    "true",
 				Location:   location,
 				Network:    network,
@@ -1159,11 +1185,30 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 			NumOfUsers:    int(ptr.TotalUsers),
 			Duration:      int(ptr.Duration),
 			RampUp:        int(ptr.RampUp),
-			TargetUrl:     *ptr.TargetUrl,
+			TargetUrl:     ptr.TargetUrl,
 			IsLocal:       api.PtTaskType(ptr.Type.Number()) == api.PtTaskType_LOCAL,
-			Script4Task:   string(ptr.Scripts.Data),
+			Script4Task:   ptr.Scripts.Data,
 		},
 	}
+
+	//workers := int(ptr.TotalUsers/1000) + 1
+
+	// Adding GKEs per distributed traffics
+	for _, t := range ptr.Traffics {
+		for i := 0; i < int(t.Percent); i++ {
+			pwf.GKEs = append(pwf.GKEs, GKE{
+				AccountId:  "pt-service-account",
+				ProjectId:  projectId,
+				Cluster:    "pt-cluster-9uej2d", // + randString()
+				IsMater:    "false",
+				Location:   t.Region,
+				Network:    network,
+				Subnetwork: network,
+			})
+		}
+	}
+	//
+
 	ibuf, err := json.Marshal(pwf)
 	if err != nil {
 		l.Error(err, "json.Marshal")
@@ -1190,7 +1235,7 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 	launchedTask := &api.PtLaunchedTask{
 		CorrelationId:   crId,
 		TaskStatus:      api.PtLaunchedTaskStatus_PENDING,
-		ProvisionStatus: api.StatusWorkflow_PROVISIONING,
+		ProvisionStatus: api.WorkflowStatus_PROVISIONING,
 		Created:         timestamppb.Now(),
 		Task:            &ptr,
 	}
@@ -1201,7 +1246,7 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 // Generate a random string of a-z chars with len = 6
 func randString() string {
 	rand.Seed(time.Now().UnixNano())
-	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	chars := []rune("abcdefghijklmnopqrstuvwxyz0123456789")
 	b := make([]rune, 6)
 	for i := range b {
 		b[i] = chars[rand.Intn(len(chars))]
@@ -1224,13 +1269,22 @@ func GetPtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, error)
 	launchedTask := &api.PtLaunchedTask{
 		CorrelationId:   ptt.CorrelationId,
 		TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.StatusPtTask]),
-		ProvisionStatus: api.StatusWorkflow(api.StatusWorkflow_value[ptt.StatusWorkflow]),
+		ProvisionStatus: api.WorkflowStatus(api.WorkflowStatus_value[ptt.StatusWorkflow]),
 		Created:         ptt.Created,
 		Finished:        ptt.Finished,
 		LastUpdated:     ptt.LastUpdated,
-		MetricsLink:     ptt.MetricsLink,
-		LogsLink:        ptt.LogsLink,
-		DownloadLink:    ptt.DownloadLink,
+		// MetricsLink:     *ptt.MetricsLink,
+		// LogsLink:        *ptt.LogsLink,
+		// DownloadLink:    *ptt.DownloadLink,
+	}
+	if ptt.MetricsLink != nil {
+		launchedTask.MetricsLink = *ptt.MetricsLink
+	}
+	if ptt.LogsLink != nil {
+		launchedTask.LogsLink = *ptt.LogsLink
+	}
+	if ptt.DownloadLink != nil {
+		launchedTask.DownloadLink = *ptt.DownloadLink
 	}
 
 	return launchedTask, nil
@@ -1251,13 +1305,22 @@ func ListPtTasks(ctx context.Context, c *gin.Context) ([]*api.PtLaunchedTask, er
 		launchedTask := &api.PtLaunchedTask{
 			CorrelationId:   ptt.CorrelationId,
 			TaskStatus:      api.PtLaunchedTaskStatus(api.PtLaunchedTaskStatus_value[ptt.StatusPtTask]),
-			ProvisionStatus: api.StatusWorkflow(api.StatusWorkflow_value[ptt.StatusWorkflow]),
+			ProvisionStatus: api.WorkflowStatus(api.WorkflowStatus_value[ptt.StatusWorkflow]),
 			Created:         ptt.Created,
 			Finished:        ptt.Finished,
 			LastUpdated:     ptt.LastUpdated,
-			MetricsLink:     ptt.MetricsLink,
-			LogsLink:        ptt.LogsLink,
-			DownloadLink:    ptt.DownloadLink,
+			// MetricsLink:     *ptt.MetricsLink,
+			// LogsLink:        *ptt.LogsLink,
+			// DownloadLink:    *ptt.DownloadLink,
+		}
+		if ptt.MetricsLink != nil {
+			launchedTask.MetricsLink = *ptt.MetricsLink
+		}
+		if ptt.LogsLink != nil {
+			launchedTask.LogsLink = *ptt.LogsLink
+		}
+		if ptt.DownloadLink != nil {
+			launchedTask.DownloadLink = *ptt.DownloadLink
 		}
 
 		launchedTasks = append(launchedTasks, launchedTask)
@@ -1302,23 +1365,6 @@ func DeletePtTask(ctx context.Context, c *gin.Context) error {
 		l.Error(err, "unable to publish message to pubsub")
 		return err
 	}
-
-	// for _, gke := range input.GKEs {
-	// 	if gke.IsMater == "true" {
-	// 		ca, err := ti.GetClusterCaCertificate(ctx, gke.ProjectId, gke.Cluster, gke.Location)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 		ip, err := ti.GetClusterEndpoint(ctx, gke.ProjectId, gke.Cluster, gke.Location)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 		err = helper.DeletePtTask(ctx, ca, ip, ptt.PtTask.Metadata.Name, ptt.PtTask.Metadata.Namespace)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 	}
-	// }
 
 	return nil
 }

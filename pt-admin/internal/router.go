@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -14,6 +15,9 @@ import (
 // Router is the router of the API
 func Router(ctx context.Context) *gin.Engine {
 	r := gin.New()
+	// AllowAllOrigins
+	r.Use(cors.Default())
+
 	defaultV1(ctx, r)
 
 	// Health check
@@ -221,7 +225,7 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 		})
 
 		// Create a Dashboard for PtTask
-		v1.POST("/dashboard/pttask/:projectId/:executionId", func(c *gin.Context) {
+		v1.POST("/dashboard/pttask/:projectId/:correlationId", func(c *gin.Context) {
 			l.Info("Create a Dashboard for PtTask")
 			dUrl, err := CreateDashboard(ctx, c)
 			if err != nil {

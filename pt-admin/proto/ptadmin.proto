@@ -1,3 +1,19 @@
+
+// Copyright 2023 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+
 syntax = "proto3";
 
 
@@ -7,63 +23,98 @@ option go_package="/api";
 
 // Task type
 enum PtTaskType {
+    // Unknown task type
+    UNKNOWN_TASK_TYPE = 0;
+
     // Local task type
-    LOCAL = 0;
+    LOCAL = 1;
 
     // Distribution task type
-    DISTRIBUTION = 1;
+    DISTRIBUTION = 2;
 
 }
 
 // Task status
 enum PtLaunchedTaskStatus {
+
+    // Unknown task status
+    UNKNOWN_TASK_STATUS = 0;
+
     // Task is pending
-    PENDING = 0;
+    PENDING = 1;
 
     // Task is running
-    RUNNING = 1;
+    RUNNING = 2;
 
     // Task is finished
-    FINISHED = 2;
+    FINISHED = 3;
 
     // Task is failed
-    FAILED = 3;
+    FAILED = 4;
 
-    // Task is failed
-    CENCELED = 4;
+    // Task is caneling /British English: CANCELLING / American English: CANCELING
+    CANCELLING = 5;
+
+    // Task is canceled /British English: CANCELLED / American English: CANCELED
+    CANCELLED = 6;
+
 }
 
 // Status of provisioning workflow
-enum StatusWorkflow {
+enum WorkflowStatus {
+    // Unknown workflow status
+    UNKNOWN_WORKFLOW_STATUS = 0;
 
     // Workflow is provisioning
-    PROVISIONING = 0;
+    PROVISIONING = 1;
 
     // Workflow is provisioning finished
-    PROVISIONING_FINISHED = 1;
+    PROVISIONING_FINISHED = 2;
 
     // Workflow is provisioning failed
-    PROVISIONING_FAILED = 2;
+    PROVISIONING_FAILED = 3;
+
+}
+
+enum ScriptType {
+    // Unknown script type
+    UNKNOWN_SCRIPT_TYPE = 0;
+
+    // Script type: file
+    FILE = 1;
+
+    // Script type: zip
+    ZIP = 2;
+
+    // Script type: gz
+    GZ = 3;
+
+    // Script type: tar
+    TAR = 4;
+
+    // Script type: tgz
+    TGZ = 5;
 
 }
 
 // Traffic for the task
-message PtTaskRequestTracffic {
+message PtTaskRequestTraffic {
     // Region for the traffic
     string region = 1;
 
-    // Percent for the traffic
-    int32 pecent = 2;
+    //TODO: Percent for the traffic => Number of workers in this region
+    int32 percent = 2;
 }
 
 // Scripts for the task
 message PtTaskRequestScript {
     // Script name
-    optional string name = 1;
-    // Script type: file, zip, gz, tar, etc; "file is default"
-    optional string type = 2;
+    string name = 1;
 
-    // Script content
+    // Script type: file, zip, gz, tar, tgz, etc; "file is default, plain text file"
+    ScriptType type = 2;
+
+    // Script content (base64) :: use string instead of bytes and then can be send as json
     string data = 3;
 }
 
@@ -76,13 +127,13 @@ message PtTaskRequest {
     // Ramp up time for test
     int32 ramp_up = 3;
     // The url of target site
-    optional string target_url = 4;
+    string target_url = 4;
 
     // Task type for perforamnce test: Local, or Distribution
     PtTaskType type = 6;
 
     // Traffics arragement
-    repeated PtTaskRequestTracffic traffics = 10;
+    repeated PtTaskRequestTraffic traffics = 10;
 
     // Scripts for the task
     PtTaskRequestScript scripts = 20;
@@ -91,7 +142,7 @@ message PtTaskRequest {
 // Launched Task for performance test with status and links
 message PtLaunchedTask {
     // Task id
-    string correlationId = 1;
+    string correlation_id = 1;
     // Task
     PtTaskRequest task = 2;
 
@@ -99,23 +150,23 @@ message PtLaunchedTask {
     PtLaunchedTaskStatus task_status = 3;
 
     // Status of provisioning workflow 
-    StatusWorkflow provision_status = 4;
+    WorkflowStatus provision_status = 4;
 
     // Created time
     google.protobuf.Timestamp created = 6;
 
     // Finished time
-    optional google.protobuf.Timestamp finished = 7;
+    google.protobuf.Timestamp finished = 7;
 
     // last updated time
-    optional google.protobuf.Timestamp last_updated = 8;
+    google.protobuf.Timestamp last_updated = 8;
 
     // Link to metrics dashboard
-    optional string metrics_link = 10;
+    string metrics_link = 10;
     // Link to logs
-    optional string logs_link = 11;
+    string logs_link = 11;
     // Link to download the test results
-    optional string download_link = 12;
+    string download_link = 12;
 }
 
 // Task list for performance test

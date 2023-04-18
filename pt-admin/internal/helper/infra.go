@@ -63,8 +63,10 @@ type OperationalStuff interface {
 	DeleteAutopilotCluster(ctx context.Context, projectId string, cluster string, region string) (*containerpb.Operation, error)
 	// Get status of provisioning a GKE Autopilot cluster
 	AutopilotClusterStatus(ctx context.Context, opId string) (*containerpb.Operation, error)
+	// Get status of provisioning a Zonalcluster
+	// ZonalClusterStatus(ctx context.Context, projectId, region, opId string) (*containerpb.Operation, error)
 	// Create a zonal GKE cluster
-	CreateZonalCluster(ctx context.Context, projectId string, cluster string, zone string, network string, subnet string, saName string) (*containerpb.Operation, error)
+	// CreateZonalCluster(ctx context.Context, projectId string, cluster string, zone string, network string, subnet string, saName string) (*containerpb.Operation, error)
 	// Execute a workflow
 	ExecWorkflow(ctx context.Context, projectId string, workflow string, input []byte) error
 }
@@ -244,15 +246,25 @@ func (ti *TInfra) AutopilotClusterStatus(ctx context.Context, projectId, region,
 	}
 
 	return c.GetOperation(ctx, req)
-	// if err != nil {
-	// 	return
-	// }
-	// if resp.Status == containerpb.Operation_DONE {
-	// 	break
-	// }
-	// time.Sleep(5 * time.Second)
 
 }
+
+// func (ti *TInfra) ZonalClusterStatus(ctx context.Context, projectId, region, opId string) (*containerpb.Operation, error) {
+// 	// https://cloud.google.com/go/docs/reference/cloud.google.com/go/container/apiv1
+// 	c, err := container.NewClusterManagerClient(ctx)
+// 	if err != nil {
+// 		return &containerpb.Operation{}, err
+// 	}
+// 	defer c.Close()
+
+// 	zone := region + "-a"
+// 	req := &containerpb.GetOperationRequest{
+// 		Name: fmt.Sprintf("projects/%s/zones/%s/operations/%s", projectId, zone, opId),
+// 	}
+
+// 	return c.GetOperation(ctx, req)
+
+// }
 
 func (ti *TInfra) CreateServiceAccount(ctx context.Context, projectId string, accountId string) (*adminpb.ServiceAccount, error) {
 	l := log.FromContext(ctx).WithName("CreateServiceAccount")
@@ -465,55 +477,62 @@ func (ti *TInfra) GetClusterCaCertificate(ctx context.Context, projectId string,
 	return resp.MasterAuth.ClusterCaCertificate, nil
 }
 
-func (ti *TInfra) CreateZonalCluster(ctx context.Context, projectId string, cluster string, zone string, network string, subnet string, saName string) (*containerpb.Operation, error) {
-	// https://cloud.google.com/go/docs/reference/cloud.google.com/go/container/apiv1
+// func (ti *TInfra) CreateZonalCluster(ctx context.Context, projectId string, cluster string, region string, network string, subnet string, saName string) (*containerpb.Operation, error) {
+// 	// https://cloud.google.com/go/docs/reference/cloud.google.com/go/container/apiv1
 
-	c, err := container.NewClusterManagerClient(ctx)
-	if err != nil {
-		return &containerpb.Operation{}, err
-	}
-	defer c.Close()
+// 	c, err := container.NewClusterManagerClient(ctx)
+// 	if err != nil {
+// 		return &containerpb.Operation{}, err
+// 	}
+// 	defer c.Close()
+// 	// Using zone A as default zone and avoid a API call to get the list of zones
+// 	zone := region + "-a"
+// 	_, err = c.GetCluster(ctx, &containerpb.GetClusterRequest{
+// 		Name: fmt.Sprintf("projects/%s/zones/%s/clusters/%s", projectId, zone, cluster),
+// 	})
+// 	if err == nil {
+// 		// Cluster already exists
+// 		return &containerpb.Operation{}, nil
+// 	} else {
+// 		req := &containerpb.CreateClusterRequest{
+// 			Parent: fmt.Sprintf("projects/%s/zones/%s", projectId, zone),
+// 			Cluster: &containerpb.Cluster{
+// 				Name:       cluster,
+// 				Network:    network,
+// 				Subnetwork: subnet,
+// 				// NodeConfig: &containerpb.NodeConfig{
+// 				// 	GcfsConfig: &containerpb.GcfsConfig{
+// 				// 		Enabled: true,
+// 				// 	},
+// 				// },
+// 				NodePools: []*containerpb.NodePool{
+// 					{
+// 						Name: "default-pool",
+// 						Config: &containerpb.NodeConfig{
+// 							MachineType:    "e2-standard-4",
+// 							DiskSizeGb:     50,
+// 							OauthScopes:    []string{"https://www.googleapis.com/auth/cloud-platform"},
+// 							ServiceAccount: fmt.Sprintf("%s@%s.iam.gserviceaccount.com", saName, projectId),
+// 						},
+// 						InitialNodeCount: 1,
+// 					},
+// 				},
+// 				ReleaseChannel: &containerpb.ReleaseChannel{
+// 					Channel: containerpb.ReleaseChannel_RAPID,
+// 				},
+// 				AddonsConfig: &containerpb.AddonsConfig{
+// 					GcpFilestoreCsiDriverConfig: &containerpb.GcpFilestoreCsiDriverConfig{
+// 						Enabled: true,
+// 					},
+// 				},
+// 				MonitoringConfig: &containerpb.MonitoringConfig{
+// 					ManagedPrometheusConfig: &containerpb.ManagedPrometheusConfig{
+// 						Enabled: true,
+// 					},
+// 				},
+// 			},
+// 		}
+// 		return c.CreateCluster(ctx, req)
+// 	}
 
-	req := &containerpb.CreateClusterRequest{
-		Parent: fmt.Sprintf("projects/%s/locations/%s", projectId, zone),
-		Cluster: &containerpb.Cluster{
-			Name:       cluster,
-			Network:    network,
-			Subnetwork: subnet,
-			Locations:  []string{zone},
-			NodeConfig: &containerpb.NodeConfig{
-				GcfsConfig: &containerpb.GcfsConfig{
-					Enabled: true,
-				},
-			},
-			NodePools: []*containerpb.NodePool{
-				{
-					Name: "default-pool",
-					Config: &containerpb.NodeConfig{
-						MachineType:    "e2-standard-2",
-						DiskSizeGb:     40,
-						OauthScopes:    []string{"https://www.googleapis.com/auth/cloud-platform"},
-						ServiceAccount: fmt.Sprintf("%s@%s.iam.gserviceaccount.com", saName, projectId),
-					},
-					Locations:        []string{zone},
-					InitialNodeCount: 1,
-				},
-			},
-			ReleaseChannel: &containerpb.ReleaseChannel{
-				Channel: containerpb.ReleaseChannel_RAPID,
-			},
-			AddonsConfig: &containerpb.AddonsConfig{
-				GcpFilestoreCsiDriverConfig: &containerpb.GcpFilestoreCsiDriverConfig{
-					Enabled: true,
-				},
-			},
-			MonitoringConfig: &containerpb.MonitoringConfig{
-				ManagedPrometheusConfig: &containerpb.ManagedPrometheusConfig{
-					Enabled: true,
-				},
-			},
-		},
-	}
-	return c.CreateCluster(ctx, req)
-
-}
+// }

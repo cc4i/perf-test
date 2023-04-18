@@ -82,9 +82,11 @@ func BuildMasterPod4Locust(ns string, img string, id string, scenario string, tr
 								},
 							},
 						},
-						InitialDelaySeconds: 5,
+						InitialDelaySeconds: 10,
 						PeriodSeconds:       30,
 						FailureThreshold:    100,
+						SuccessThreshold:    1,
+						TimeoutSeconds:      10,
 					},
 
 					VolumeMounts: []corev1.VolumeMount{
@@ -209,6 +211,8 @@ func BuildLocusterWorker4Locust(ns string, img string, masterHost string, master
 						InitialDelaySeconds: 5,
 						PeriodSeconds:       30,
 						FailureThreshold:    100,
+						SuccessThreshold:    1,
+						TimeoutSeconds:      10,
 					},
 				},
 			},
