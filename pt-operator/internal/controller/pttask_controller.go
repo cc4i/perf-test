@@ -15,10 +15,12 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -76,8 +78,12 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				id = eId
 			}
 
+			// Update status/id of PtTask
 			pTask.Status.Id = id
-			l.Info("Set Id to ptTask", "Id", pTask.Status.Id)
+			pTask.Status.PtStatus = perftestv1.PT_STATUS_INITIAL
+			update2ptadmin(ctx, pTask.Annotations["pttask/callback"], pTask.Annotations["pttask/correlationId"], pTask.Status.PtStatus)
+			l.Info("Update status of PtTask", "Id", pTask.Status.Id, "PtStatus", pTask.Status.PtStatus)
+
 			if err = r.Client.Status().Update(context.Background(), &pTask); err != nil {
 				l.Info("failed to update status of ptTask")
 				return ctrl.Result{}, err
@@ -97,14 +103,14 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					// l.Info("BO:")
 					l.Info(string(trsConf))
 					// l.Info("EO:")
-					if !(pTask.Status.Phases != nil && pTask.Status.Phases[sxe.Scenario] == "Done") {
+					if !(pTask.Status.Phases != nil && pTask.Status.Phases[sxe.Scenario] == perftestv1.PT_STATUS_FINISHED) {
 						if ph, err := do4Locust(ctx, r, req, &pTask, sxe.Scenario, sxe.Workers); err != nil {
 							l.Error(err, "failed to provision/execute Locust", "phase", ph)
 							updateStatus(ctx, r, sxe.Scenario, req.NamespacedName, ph, "")
 						} else {
 							updateStatus(ctx, r, sxe.Scenario, req.NamespacedName, ph, "")
 						}
-						l.Info("Provisioning for Locust is done", "scenario", sxe.Scenario, "workers", sxe.Workers)
+						l.Info("Provisioning for Locust is succeeded", "scenario", sxe.Scenario, "workers", sxe.Workers)
 					}
 				}(xe)
 
@@ -119,7 +125,7 @@ func (r *PtTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-// Update the status of PtTask, including phase and archive
+// Update the status of PtTask, including phase, archive, and ptStatus
 func updateStatus(ctx context.Context, r *PtTaskReconciler, scenario string, nn types.NamespacedName, ph string, arch string) error {
 	l := log.FromContext(ctx)
 	l.Info("Update status of PtTask", "scenario", scenario, "ph", ph, "arch", arch)
@@ -136,12 +142,19 @@ func updateStatus(ctx context.Context, r *PtTaskReconciler, scenario string, nn 
 	}
 	if ph != "" {
 		pTask.Status.Phases[scenario] = ph
+		if strings.HasPrefix(ph, "PROVISIONING_") {
+			pTask.Status.PtStatus = perftestv1.PT_STATUS_PENDING
+		} else {
+			pTask.Status.PtStatus = ph
+		}
 		l.Info("Update phase of status", "scenario", scenario, "phase", ph)
 	}
 	if arch != "" {
 		pTask.Status.Archives[scenario] = arch
 		l.Info("Update archive of status", "scenario", scenario, "archive", arch)
 	}
+
+	update2ptadmin(ctx, pTask.Annotations["pttask/callback"], pTask.Annotations["pttask/correlationId"], pTask.Status.PtStatus)
 	if err := r.Client.Status().Update(context.Background(), &pTask); err != nil {
 		l.Error(err, "failed to update status of ptTask", "scenario", scenario)
 		return err
@@ -155,7 +168,7 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	// workerImage := "asia-docker.pkg.dev/play-api-service/test-images/locust-worker"
 
 	// 1. Create Locust master Pod
-	phase := "PrivisionMaster"
+	phase := perftestv1.PT_STATUS_PROVISIONING_MASTER
 	trsConf, _ := yaml.Marshal(pTask.Spec)
 	mp := helper.BuildMasterPod4Locust(req.Namespace, pTask.Spec.Images[scenario].MasterImage, pTask.Status.Id, scenario, string(trsConf))
 	mpNN := types.NamespacedName{
@@ -195,10 +208,12 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 		l.Info("Create master svc", "name", ms.Name, "namespace", ms.Namespace)
 		if err := ctrl.SetControllerReference(pTask, ms, ptr.Scheme); err != nil {
 			l.Error(err, "unable to set OwnerReferences to master service", "name", ms.Name, "namespace", ms.Namespace)
+			updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
 			return phase, err
 		}
 		if err := ptr.Create(ctx, ms); err != nil {
 			l.Error(err, "failed to create Service for master node of Locust")
+			updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
 			return phase, err
 		}
 	} else {
@@ -225,7 +240,7 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	l.Info("master service for Locust is ready", "host", svcHost, "port", svcPort)
 	go MonitorLocustMaster(scenario, ptr, mpNN)
 
-	phase = "ProvisionWorker"
+	phase = perftestv1.PT_STATUS_PROVISIONING_WORKER
 	// Creat multiple workers
 	l.Info("Provision workers", "type", pTask.Spec.Type)
 	if pTask.Spec.Type == "Local" {
@@ -242,10 +257,12 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 				l.Info("Create worker pod", "name", worker.Name, "namespace", worker.Namespace)
 				if err := ctrl.SetControllerReference(pTask, worker, ptr.Scheme); err != nil {
 					l.Error(err, "unable to set OwnerReferences to worker pod", "name", worker.Name, "namespace", worker.Namespace)
+					updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
 					return phase, err
 				}
 				if err := ptr.Create(ctx, worker); err != nil {
 					l.Error(err, "failed to create Pod for worker node of Locust", "worker", worker.ObjectMeta.Name)
+					updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
 					return phase, err
 				}
 			} else {
@@ -267,12 +284,14 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 						_, k2c, err := helper.Kube2Client(ctx, t.GKECA64, t.GKEEndpoint)
 						if err != nil {
 							l.Error(err, "unable to connect with GKE cluster", "region", t.Region, "endpoint", t.GKEEndpoint)
+							updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
 							return phase, err
 						}
 						worker := helper.BuildLocusterWorker4Locust(req.Namespace, pTask.Spec.Images[scenario].WorkerImage, svcHost, svcPort, scenario, strconv.Itoa(i))
 						if _, err := k2c.CoreV1().Pods("default").Get(ctx, worker.Name, metav1.GetOptions{}); err != nil {
 							if _, err := k2c.CoreV1().Pods("default").Create(ctx, worker, metav1.CreateOptions{}); err != nil {
 								l.Error(err, "unable to create worker in GKE cluster", "region", t.Region, "endpoint", t.GKEEndpoint)
+								updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
 								return phase, err
 							}
 						}
@@ -289,7 +308,7 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 	// 5. Kick off monitoring and keep update along the way
 	// 5.1 Checking out testing kicked off
 	// 5.2 Starting to aggreagete metrics
-	phase = "Testing"
+	phase = perftestv1.PT_STATUS_TESTING
 	updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, phase, "")
 	if pTask.Spec.TestingOutput.Ldjson != "" {
 		l.Info("local debug mode", "ldjson", pTask.Spec.TestingOutput.Ldjson)
@@ -348,8 +367,8 @@ func checkMasterStatus(ptr *PtTaskReconciler, pTask *perftestv1.PtTask) {
 								}
 
 								//TODO: Mark the PtTask as done
-								l.Info("the scenario is done in PtTask", "scenario", scenario)
-								updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, "Done", time.Now().String())
+								l.Info("the scenario is succeeded in PtTask", "scenario", scenario)
+								updateStatus(ctx, ptr, scenario, types.NamespacedName{Name: pTask.Name, Namespace: pTask.Namespace}, perftestv1.PT_STATUS_FINISHED, time.Now().String())
 								isAllDone--
 							}
 						}
@@ -445,4 +464,27 @@ func (r *PtTaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&perftestv1.PtTask{}).
 		Complete(r)
+}
+
+func update2ptadmin(ctx context.Context, url string, correlationId string, status string) {
+	l := log.FromContext(ctx)
+	l.Info("callback to send status to ptadmin")
+	if url != "" && correlationId != "" && status != "" {
+		l.Info("sending status to ptadmin", "url", url, "correlationId", correlationId, "status", status)
+		client := &http.Client{}
+		req, err := http.NewRequest("PATCH", url+"/v1/update/pttask/"+correlationId, bytes.NewBuffer([]byte(status)))
+		if err != nil {
+			l.Error(err, "unable to create request to ptadmin")
+			return
+		}
+		req.Header.Set("Content-Type", "text/plain")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			l.Error(err, "unable to send request to ptadmin")
+			return
+		}
+		defer resp.Body.Close()
+		l.Info("response from ptadmin", "status", resp.Status)
+	}
 }

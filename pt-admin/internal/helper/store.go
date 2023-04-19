@@ -163,6 +163,7 @@ func UpdatePtTask(ctx context.Context, projectId, collection, id string, ptTask 
 
 }
 
+// Update the status of the collection in Firestore, Could be done in pt-operator or call back from pt-operator
 func UpdatePtTaskStatus(ctx context.Context, projectId, collection, id, status string) (*firestore.WriteResult, error) {
 	l := log.FromContext(ctx).WithName("UpdateStatusPtTask")
 	l.Info("Update status of PtStatus", "collection", collection, "id", id, "status", status)
@@ -189,4 +190,31 @@ func UpdatePtTaskStatus(ctx context.Context, projectId, collection, id, status s
 	// Update the value
 	return client.Collection(collection).Doc(id).Set(ctx, orgin)
 
+}
+
+func UpdateWorkflowStatus(ctx context.Context, projectId, collection, id, status string) (*firestore.WriteResult, error) {
+	l := log.FromContext(ctx).WithName("UpdateWorkflowStatus")
+	l.Info("Update status of Workflow", "collection", collection, "id", id, "status", status)
+	client, err := firestore.NewClient(ctx, projectId)
+	if err != nil {
+		l.Error(err, "firestore new error")
+	}
+	defer client.Close()
+
+	snapshot, err := client.Collection(collection).Doc(id).Get(ctx)
+	if err != nil {
+		l.Error(err, "failed to get doc")
+		return nil, err
+	}
+	var orgin PtTransaction
+	err = snapshot.DataTo(&orgin)
+	if err != nil {
+		l.Error(err, "failed to convert data")
+		return nil, err
+	}
+	orgin.WorkflowStatus = status
+	orgin.LastUpdated = timestamppb.Now()
+
+	// Update the value
+	return client.Collection(collection).Doc(id).Set(ctx, orgin)
 }

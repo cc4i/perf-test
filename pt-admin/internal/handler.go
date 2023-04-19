@@ -628,7 +628,9 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 				Name:      name,
 				Namespace: "pt-system",
 				Annotations: map[string]string{
-					"pttask/executionId": executionId,
+					"pttask/executionId":   executionId,
+					"pttask/correlationId": pwf.CorrelationId,
+					"pttask/callback":      pwf.Url,
 				},
 			},
 			Spec: api.PtTaskSpec{
@@ -1368,4 +1370,36 @@ func DeletePtTask(ctx context.Context, c *gin.Context) error {
 	}
 
 	return nil
+}
+
+// UpdatePtTaskStatus updates the status of a pttask, call from Cloud Run with status name
+func UpdatePtTaskStatus(ctx context.Context, c *gin.Context) error {
+	l := log.FromContext(ctx).WithName("UpdatePtTask")
+	l.Info("UpdatePtTask")
+	correlationId := c.Param("correlationId")
+	projectId := os.Getenv("PROJECT_ID")
+
+	status, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		l.Error(err, "io.ReadAll")
+		return err
+	}
+	_, err = helper.UpdatePtTaskStatus(ctx, projectId, "pt-transactions", correlationId, string(status))
+	return err
+}
+
+// UpdateWorkflowStatus updates the status of a workflow, call from Workflow with status name
+func UpdateWorkflowStatus(ctx context.Context, c *gin.Context) error {
+	l := log.FromContext(ctx).WithName("UpdateWorkflowStatus")
+	l.Info("UpdateWorkflowStatus")
+	correlationId := c.Param("correlationId")
+	projectId := os.Getenv("PROJECT_ID")
+
+	// status, err := io.ReadAll(c.Request.Body)
+	// if err != nil {
+	// 	l.Error(err, "io.ReadAll")
+	// 	return err
+	// }
+	_, err := helper.UpdateWorkflowStatus(ctx, projectId, "pt-transactions", correlationId, api.WorkflowStatus_PROVISIONING_FINISHED.String())
+	return err
 }

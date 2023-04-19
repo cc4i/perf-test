@@ -179,6 +179,15 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusOK, []string{"success"})
 			}
 		})
+		v1.PATCH("/workflow/status/:correlationId", func(c *gin.Context) {
+			l.Info("Update status of workflow into Firestore")
+			err := UpdateWorkflowStatus(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, []string{"success"})
+			}
+		})
 
 		// TODO: Destroy everything we just provisioned for PtTask, expected: ServiceAccount, GCS, Firestore
 		v1.POST("/workflow/destroy/:projectId/:correlationId", func(c *gin.Context) {
@@ -221,6 +230,16 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 				c.JSON(http.StatusBadRequest, []string{err.Error()})
 			} else {
 				c.JSON(http.StatusOK, pt)
+			}
+		})
+		// Update the status of PtTask
+		v1.PATCH("/update/pttask/:correlationId", func(c *gin.Context) {
+			l.Info("Update the status of PtTask")
+			err := UpdatePtTaskStatus(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, []string{"success"})
 			}
 		})
 

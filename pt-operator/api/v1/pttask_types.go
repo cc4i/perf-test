@@ -108,19 +108,34 @@ type PtTaskTestingOutput struct {
 	Bucket string `json:"bucket"`
 }
 
+var (
+	PT_STATUS_UNKNOWN               = "UNKNOWN"
+	PT_STATUS_INITIAL               = "INITIAL"
+	PT_STATUS_PROVISIONING          = "PROVISIONING"
+	PT_STATUS_PROVISIONING_MASTER   = "PROVISIONING_MASTER"
+	PT_STATUS_PROVISIONING_WORKER   = "PROVISIONING_WORKER"
+	PT_STATUS_PROVISIONING_FINISHED = "PROVISIONING_FINISHED"
+	PT_STATUS_PROVISIONING_FAILED   = "PROVISIONING_FAILED"
+	PT_STATUS_PENDING               = "PENDING"
+	PT_STATUS_TESTING               = "TESTING"
+	PT_STATUS_FINISHED              = "FINISHED"
+	PT_STATUS_CANCELLED             = "CANCELLED"
+	PT_STATUS_CANCELLING            = "CANCELLING"
+	PT_STATUS_FAILED                = "FAILED"
+)
+
 // PtTaskStatus defines the observed state of PtTask
 type PtTaskStatus struct {
 
-	// Phases included following status per testing scenario: (scenario name) -> (phase)
-	// - "PrivisionMaster",
-	// - "ProvisionWorker",
-	// - "Testing",
-	// - "Done"
+	// Phases included status per testing scenario: (scenario name) -> (PT_STATUS_*)
 	Phases map[string]string `json:"phase,omitempty"`
 	// Archive for each scenario: (scenario name) -> (archived timestamp)
 	Archives map[string]string `json:"archives,omitempty"`
 	// Each PtTask has an unique Id
 	Id string `json:"id"`
+
+	// The status of the pttask:: PT_STATUS_*
+	PtStatus string `json:"ptStatus"`
 }
 
 //+kubebuilder:object:root=true

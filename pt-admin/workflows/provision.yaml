@@ -192,5 +192,13 @@ main:
                 type: OIDC
             body: $${input}
         result: dashboardUrl
+    - UpdateWorkflowStatus:
+        call: http.patch
+        args:
+            url: $${input.url + "/v1/workflow/status/" + "/"+ input.correlationId}
+            auth:
+                type: OIDC
+            body: $${input}
+        result: workflowStatus
     - AllDone:
         return: $${input}
