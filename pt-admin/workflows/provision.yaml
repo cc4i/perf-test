@@ -195,7 +195,7 @@ main:
     - UpdateWorkflowStatus:
         call: http.patch
         args:
-            url: $${input.url + "/v1/workflow/status/" + "/"+ input.correlationId}
+            url: $${input.url + "/v1/workflow/status/" + input.correlationId}
             auth:
                 type: OIDC
             body: $${input}

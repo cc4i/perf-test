@@ -37,6 +37,67 @@ type PtTransaction struct {
 	LogsLink *string `json:"logs_link,omitempty"`
 	// Link to download the test results
 	DownloadLink *string `json:"download_link,omitempty"`
+
+	// !!!Using pointer to avoid sync.Mutex due to generate through proto!!!
+	OriginTaskRequest  *api.PtTaskRequest  `json:"originTaskRequest,omitempty"`
+	OriginLaunchedTask *api.PtLaunchedTask `json:"originLaunchedTask,omitempty"`
+}
+
+type ProvisionWf struct {
+	// The url of Cloud Run
+	Url            string         `json:"url"`
+	ProjectId      string         `json:"projectId"`
+	Region         string         `json:"region"`
+	VPC            VPC            `json:"vpc"`
+	ServiceAccount ServiceAccount `json:"serviceAccount"`
+	GKEs           []GKE          `json:"gkes"`
+	TaskRequest    TaskRequest    `json:"taskRequest,omitempty"`
+	CorrelationId  string         `json:"correlationId,omitempty"`
+
+	// !!!Using pointer to avoid sync.Mutex due to generate through proto!!!
+	OriginTaskRequest  *api.PtTaskRequest  `json:"originTaskRequest,omitempty"`
+	OriginLaunchedTask *api.PtLaunchedTask `json:"originLaunchedTask,omitempty"`
+}
+
+type VPC struct {
+	ProjectId string `json:"projectId"`
+	Network   string `json:"network"`
+	Mtu       int32  `json:"mtu"`
+}
+
+type ServiceAccount struct {
+	ProjectId string `json:"projectId"`
+	AccountId string `json:"accountId"`
+	Key       string `json:"key,omitempty"`
+}
+
+type GKE struct {
+	ProjectId   string `json:"projectId"`
+	Cluster     string `json:"cluster"`
+	Location    string `json:"location"`
+	Network     string `json:"network"`
+	Subnetwork  string `json:"subnetwork"`
+	IsMater     string `json:"isMaster"`
+	AccountId   string `json:"accountId"`
+	Endpoint    string `json:"endpoint,omitempty"`
+	Certificate string `json:"certificate,omitempty"`
+	OperationId string `json:"operationId,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
+type TaskRequest struct {
+	ProjectId  string `json:"projectId"`
+	NumOfUsers int    `json:"numOfUsers"`
+	Duration   int    `json:"duration"`
+	RampUp     int    `json:"rampUp"`
+	TargetUrl  string `json:"targetUrl"`
+	// locust;jmeter
+	Executor string `json:"executor"`
+	IsLocal  bool   `json:"isLocal"`
+	// Distributed worker: {region: workerNum}
+	Worker4Task   map[string]int `json:"worker4Task,omitempty"`
+	Script4Task   string         `json:"script4Task"`
+	ArchiveBucket string         `json:"archiveBucket"`
 }
 
 // Store the value into the collection in Firestore

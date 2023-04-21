@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -40,59 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-type ProvisionWf struct {
-	// The url of Cloud Run
-	Url            string         `json:"url"`
-	ProjectId      string         `json:"projectId"`
-	Region         string         `json:"region"`
-	VPC            VPC            `json:"vpc"`
-	ServiceAccount ServiceAccount `json:"serviceAccount"`
-	GKEs           []GKE          `json:"gkes"`
-	TaskRequest    TaskRequest    `json:"taskRequest,omitempty"`
-	CorrelationId  string         `json:"correlationId,omitempty"`
-}
-
-type VPC struct {
-	ProjectId string `json:"projectId"`
-	Network   string `json:"network"`
-	Mtu       int32  `json:"mtu"`
-}
-
-type ServiceAccount struct {
-	ProjectId string `json:"projectId"`
-	AccountId string `json:"accountId"`
-	Key       string `json:"key,omitempty"`
-}
-
-type GKE struct {
-	ProjectId   string `json:"projectId"`
-	Cluster     string `json:"cluster"`
-	Location    string `json:"location"`
-	Network     string `json:"network"`
-	Subnetwork  string `json:"subnetwork"`
-	IsMater     string `json:"isMaster"`
-	AccountId   string `json:"accountId"`
-	Endpoint    string `json:"endpoint,omitempty"`
-	Certificate string `json:"certificate,omitempty"`
-	OperationId string `json:"operationId,omitempty"`
-	Status      string `json:"status,omitempty"`
-}
-
-type TaskRequest struct {
-	ProjectId  string `json:"projectId"`
-	NumOfUsers int    `json:"numOfUsers"`
-	Duration   int    `json:"duration"`
-	RampUp     int    `json:"rampUp"`
-	TargetUrl  string `json:"targetUrl"`
-	// locust;jmeter
-	Executor string `json:"executor"`
-	IsLocal  bool   `json:"isLocal"`
-	// Distributed worker: {region: workerNum}
-	Worker4Task   map[string]int `json:"worker4Task,omitempty"`
-	Script4Task   string         `json:"script4Task"`
-	ArchiveBucket string         `json:"archiveBucket"`
-}
-
 /////////////////////
 // Operations for provison infrastructure
 // 0. Build container images for the following testing task
@@ -109,54 +56,54 @@ type TaskRequest struct {
 //7. Apply PtTask to the GKE Autopilot cluster
 /////////////////////
 
-func CreateVPC(ctx context.Context, c *gin.Context) (*VPC, error) {
+func CreateVPC(ctx context.Context, c *gin.Context) (*helper.VPC, error) {
 	l := log.FromContext(ctx).WithName("CreateVPC")
 	ti := &helper.TInfra{}
-	var input VPC
+	var input helper.VPC
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		return &VPC{}, err
+		return &helper.VPC{}, err
 	}
 	err = json.Unmarshal(buf, &input)
 	if err != nil {
-		return &VPC{}, err
+		return &helper.VPC{}, err
 	}
 	l.Info("Unmarshal buf", "buf", input)
 	err = ti.CreateVPCNetwork(ctx, input.ProjectId, input.Network, input.Mtu)
 	if err != nil {
-		return &VPC{}, err
+		return &helper.VPC{}, err
 	}
 	return &input, nil
 }
 
-func CreateServiceAccount(ctx context.Context, c *gin.Context) (*ServiceAccount, error) {
+func CreateServiceAccount(ctx context.Context, c *gin.Context) (*helper.ServiceAccount, error) {
 	ti := &helper.TInfra{}
-	var input ServiceAccount
+	var input helper.ServiceAccount
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		return &ServiceAccount{}, err
+		return &helper.ServiceAccount{}, err
 	}
 	err = json.Unmarshal(buf, &input)
 	if err != nil {
-		return &ServiceAccount{}, err
+		return &helper.ServiceAccount{}, err
 	}
 	// Create Service Account
 	_, err = ti.CreateServiceAccount(ctx, input.ProjectId, input.AccountId)
 	if err != nil {
-		return &ServiceAccount{}, err
+		return &helper.ServiceAccount{}, err
 	}
 	// Grant roles to Service Account
 	err = ti.SetIamPolicies2SA(ctx, input.ProjectId, input.AccountId)
 	if err != nil {
-		return &ServiceAccount{}, err
+		return &helper.ServiceAccount{}, err
 	}
 
 	return &input, nil
 }
 
-func CreateServiceAccountKey(ctx context.Context, c *gin.Context) (*ServiceAccount, error) {
+func CreateServiceAccountKey(ctx context.Context, c *gin.Context) (*helper.ServiceAccount, error) {
 	ti := &helper.TInfra{}
-	var input ServiceAccount
+	var input helper.ServiceAccount
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return &input, err
@@ -173,23 +120,23 @@ func CreateServiceAccountKey(ctx context.Context, c *gin.Context) (*ServiceAccou
 	return &input, nil
 }
 
-func CreateGKEAutopilotCluster(ctx context.Context, c *gin.Context) ([]GKE, error) {
+func CreateGKEAutopilotCluster(ctx context.Context, c *gin.Context) ([]helper.GKE, error) {
 	ti := &helper.TInfra{}
-	var input []GKE
+	var input []helper.GKE
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		return []GKE{}, err
+		return []helper.GKE{}, err
 	}
 	err = json.Unmarshal(buf, &input)
 	if err != nil {
-		return []GKE{}, err
+		return []helper.GKE{}, err
 	}
 	// Return array of GKE with operationId, if operationId is empty, it means the cluster is existed
-	var observed []GKE
+	var observed []helper.GKE
 	for _, gke := range input {
 		op, err := ti.CreateAutopilotCluster(ctx, gke.ProjectId, gke.Cluster, gke.Location, gke.Network, gke.Subnetwork, gke.AccountId)
 		if err != nil {
-			return []GKE{}, err
+			return []helper.GKE{}, err
 		}
 		if op.Name != "" {
 			gke.OperationId = op.Name
@@ -203,10 +150,10 @@ func CreateGKEAutopilotCluster(ctx context.Context, c *gin.Context) ([]GKE, erro
 
 }
 
-func CheckClusterStatus(ctx context.Context, c *gin.Context) ([]GKE, error) {
+func CheckClusterStatus(ctx context.Context, c *gin.Context) ([]helper.GKE, error) {
 	l := log.FromContext(ctx).WithName("CheckClusterStatus")
 	ti := &helper.TInfra{}
-	var input []GKE
+	var input []helper.GKE
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return input, err
@@ -216,7 +163,7 @@ func CheckClusterStatus(ctx context.Context, c *gin.Context) ([]GKE, error) {
 		l.Error(err, "json.Unmarshal", "buf", string(buf))
 		return input, err
 	}
-	var observed []GKE
+	var observed []helper.GKE
 	for _, gke := range input {
 		if gke.Status != "DONE" {
 			op, err := ti.AutopilotClusterStatus(ctx, gke.ProjectId, gke.Location, gke.OperationId)
@@ -243,16 +190,16 @@ func CheckClusterStatus(ctx context.Context, c *gin.Context) ([]GKE, error) {
 		}
 	}
 	if isAll {
-		return []GKE{}, nil
+		return []helper.GKE{}, nil
 	} else {
 		return observed, nil
 	}
 
 }
 
-func RetrieveClusterInfo(ctx context.Context, c *gin.Context) ([]GKE, error) {
+func RetrieveClusterInfo(ctx context.Context, c *gin.Context) ([]helper.GKE, error) {
 	ti := &helper.TInfra{}
-	var input []GKE
+	var input []helper.GKE
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return input, err
@@ -261,7 +208,7 @@ func RetrieveClusterInfo(ctx context.Context, c *gin.Context) ([]GKE, error) {
 	if err != nil {
 		return input, err
 	}
-	var observed []GKE
+	var observed []helper.GKE
 	for _, gke := range input {
 		ca, err := ti.GetClusterCaCertificate(ctx, gke.ProjectId, gke.Cluster, gke.Location)
 		if err != nil {
@@ -280,7 +227,7 @@ func RetrieveClusterInfo(ctx context.Context, c *gin.Context) ([]GKE, error) {
 
 func ApplyManifest(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx).WithName("ApplyManifest")
-	var gke GKE
+	var gke helper.GKE
 	file := c.Param("file")
 
 	buf, err := io.ReadAll(c.Request.Body)
@@ -315,7 +262,7 @@ func ApplyManifest(ctx context.Context, c *gin.Context) error {
 
 func BindingWorkloadIdentity(ctx context.Context, c *gin.Context) error {
 	ti := &helper.TInfra{}
-	var sa ServiceAccount
+	var sa helper.ServiceAccount
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return err
@@ -363,7 +310,7 @@ func replaceEnvs(ctx context.Context, file, sa, projectId, network, ptName strin
 
 func GetPVCStatus(ctx context.Context, c *gin.Context) (map[string]string, error) {
 	l := log.FromContext(ctx).WithName("GetPVCStatus")
-	var gke GKE
+	var gke helper.GKE
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		l.Error(err, "io.ReadAll")
@@ -390,7 +337,7 @@ func GetPVCStatus(ctx context.Context, c *gin.Context) (map[string]string, error
 
 func GetPtOperatorStatus(ctx context.Context, c *gin.Context) (map[string]string, error) {
 	l := log.FromContext(ctx).WithName("GetPtOperatorStatus")
-	var gke GKE
+	var gke helper.GKE
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		l.Error(err, "io.ReadAll")
@@ -418,7 +365,7 @@ func GetPtOperatorStatus(ctx context.Context, c *gin.Context) (map[string]string
 // Record the execution of a workflow
 func RecordWorkflow(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx).WithName("RecordWorkflow")
-	var pwf ProvisionWf
+	var pwf helper.ProvisionWf
 	// The name of the workflow to be executed
 	wf := c.Param("wf")
 	eId := c.Param("executionId")
@@ -435,12 +382,15 @@ func RecordWorkflow(ctx context.Context, c *gin.Context) error {
 
 	// Save executionId to Firestore
 	_, err = helper.Insert(ctx, pwf.ProjectId, "pt-transactions", helper.PtTransaction{
-		CorrelationId:  pwf.CorrelationId,
-		Created:        timestamppb.Now(),
-		ExecutionId:    eId,
-		WorkflowName:   wf,
-		Input:          pwf,
-		WorkflowStatus: api.WorkflowStatus_PROVISIONING.String(),
+		CorrelationId:      pwf.CorrelationId,
+		Created:            pwf.OriginLaunchedTask.Created,
+		LastUpdated:        pwf.OriginLaunchedTask.LastUpdated,
+		ExecutionId:        eId,
+		WorkflowName:       wf,
+		Input:              pwf,
+		WorkflowStatus:     api.WorkflowStatus_PROVISIONING.String(),
+		OriginTaskRequest:  pwf.OriginTaskRequest,
+		OriginLaunchedTask: pwf.OriginLaunchedTask,
 	})
 	if err != nil {
 		l.Error(err, "failed to insert PtTransaction to Firestore")
@@ -454,7 +404,7 @@ func RecordWorkflow(ctx context.Context, c *gin.Context) error {
 func ExecWorkflow(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx).WithName("ExecWorkflow")
 	ti := &helper.TInfra{}
-	var pwf ProvisionWf
+	var pwf helper.ProvisionWf
 	// The name of the workflow to be executed
 	wf := c.Param("wf")
 	buf, err := io.ReadAll(c.Request.Body)
@@ -598,7 +548,7 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, error) {
 	l := log.FromContext(ctx).WithName("PreparePtTask")
 	executionId := c.Param("executionId")
-	var pwf ProvisionWf
+	var pwf helper.ProvisionWf
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		l.Error(err, "io.ReadAll")
@@ -754,7 +704,7 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 //  5. submit a cloudbuild job to build the image
 func BuildImage(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx)
-	var tr TaskRequest
+	var tr helper.TaskRequest
 	buf, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		l.Error(err, "io.ReadAll")
@@ -772,14 +722,17 @@ func BuildImage(ctx context.Context, c *gin.Context) error {
 	destDir := fmt.Sprintf("/var/tmp/%d", time.Now().UnixNano())
 	tgz2Gcs := fmt.Sprintf("/var/tmp/pt-scripts-to-gcs-%d.tgz", time.Now().UnixNano())
 
-	l.Info("decode string", "txt", tr.Script4Task)
-	txt, err := base64.StdEncoding.DecodeString(tr.Script4Task)
+	l.Info("download the script file from bucket", "src", tr.Script4Task)
+
+	bucket := strings.Split(tr.Script4Task, "/")[2]
+	object := strings.Replace(tr.Script4Task, fmt.Sprintf("gs://%s/", bucket), "", 1)
+	tgzBuf, err := downloadFromGcs(ctx, bucket, object)
 	if err != nil {
-		l.Error(err, "failed to decode text")
+		l.Error(err, "downloadFromGcs", "src", tr.Script4Task)
 		return err
 	}
 	l.Info("extract script files from tgz")
-	err = ioutil.WriteFile(tgzFile, []byte(txt), 0644)
+	err = ioutil.WriteFile(tgzFile, tgzBuf, 0644)
 	if err != nil {
 		l.Error(err, "ioutil.WriteFile")
 		return err
@@ -1095,7 +1048,7 @@ func DestroyResources(ctx context.Context, c *gin.Context) error {
 
 	// TODO: delete all resources created by for PT
 	// delete GKE Autopilot cluster
-	var input ProvisionWf
+	var input helper.ProvisionWf
 	buf, err := json.Marshal(trans.Input)
 	if err != nil {
 		l.Error(err, "unable to marshal transaction input", "projectId", projectId, "executionId", trans.ExecutionId)
@@ -1135,12 +1088,17 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 		l.Error(err, "json.Unmarshal", "buf", string(buf))
 		return nil, err
 	}
+	if ptr.CorrelationId == "" {
+		return nil, errors.New("correlationId is empty & uploading script to get correlationId")
+	}
 
 	// Get URL of CloudRun service
 	runService := os.Getenv("K_SERVICE")
 	projectId := os.Getenv("PROJECT_ID")
 	location := os.Getenv("LOCATION")
-	crId := uuid.New().String()
+	bucket := os.Getenv("ARCHIEVE_BUCKET")
+	crId := ptr.CorrelationId
+	l.Info("creating a pttask", "projectId", projectId, "location", location, "runService", runService, "correlationId", crId, "bucket", bucket)
 	cloudrun, err := run.NewServicesClient(ctx)
 	if err != nil {
 		l.Error(err, "unable to create cloudrun client")
@@ -1157,11 +1115,11 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 
 	// Construct the input for the workflow
 	network := "pt-vpc-9uej2d" // + randString()
-	pwf := ProvisionWf{
+	pwf := helper.ProvisionWf{
 		Url:           resp.Uri,
 		ProjectId:     projectId,
 		CorrelationId: crId,
-		GKEs: []GKE{
+		GKEs: []helper.GKE{
 			{
 				AccountId:  "pt-service-account",
 				ProjectId:  projectId,
@@ -1172,25 +1130,25 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 				Subnetwork: network,
 			},
 		},
-		VPC: VPC{
+		VPC: helper.VPC{
 			Mtu:       1460,
 			Network:   network,
 			ProjectId: projectId,
 		},
-		ServiceAccount: ServiceAccount{
+		ServiceAccount: helper.ServiceAccount{
 			AccountId: "pt-service-account",
 			ProjectId: projectId,
 		},
-		TaskRequest: TaskRequest{
+		TaskRequest: helper.TaskRequest{
 			ProjectId:     projectId,
-			ArchiveBucket: "pt-results-archive",
+			ArchiveBucket: bucket,
 			Executor:      "locust",
 			NumOfUsers:    int(ptr.TotalUsers),
 			Duration:      int(ptr.Duration),
 			RampUp:        int(ptr.RampUp),
 			TargetUrl:     ptr.TargetUrl,
 			IsLocal:       api.PtTaskType(ptr.Type.Number()) == api.PtTaskType_LOCAL,
-			Script4Task:   ptr.Scripts.Data,
+			Script4Task:   fmt.Sprintf("gs://%s/upload-scripts/%s.tgz", bucket, crId),
 		},
 	}
 
@@ -1199,7 +1157,7 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 	// Adding GKEs per distributed traffics
 	for _, t := range ptr.Traffics {
 		for i := 0; i < int(t.Percent); i++ {
-			pwf.GKEs = append(pwf.GKEs, GKE{
+			pwf.GKEs = append(pwf.GKEs, helper.GKE{
 				AccountId:  "pt-service-account",
 				ProjectId:  projectId,
 				Cluster:    "pt-cluster-9uej2d", // + randString()
@@ -1211,6 +1169,19 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 		}
 	}
 	//
+
+	// Respond to client
+	launchedTask := &api.PtLaunchedTask{
+		CorrelationId:   crId,
+		TaskStatus:      api.PtLaunchedTaskStatus_PENDING,
+		ProvisionStatus: api.WorkflowStatus_PROVISIONING,
+		Created:         timestamppb.Now(),
+		LastUpdated:     timestamppb.Now(),
+		Task:            &ptr,
+	}
+	// Attached info as a part of the workflow
+	pwf.OriginTaskRequest = &ptr
+	pwf.OriginLaunchedTask = launchedTask
 
 	ibuf, err := json.Marshal(pwf)
 	if err != nil {
@@ -1232,15 +1203,6 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 	if err != nil {
 		l.Error(err, "unable to publish message to pubsub")
 		return nil, err
-	}
-
-	// Respond to client
-	launchedTask := &api.PtLaunchedTask{
-		CorrelationId:   crId,
-		TaskStatus:      api.PtLaunchedTaskStatus_PENDING,
-		ProvisionStatus: api.WorkflowStatus_PROVISIONING,
-		Created:         timestamppb.Now(),
-		Task:            &ptr,
 	}
 
 	return launchedTask, nil
@@ -1312,6 +1274,7 @@ func ListPtTasks(ctx context.Context, c *gin.Context) ([]*api.PtLaunchedTask, er
 			Created:         ptt.Created,
 			Finished:        ptt.Finished,
 			LastUpdated:     ptt.LastUpdated,
+			Task:            ptt.OriginTaskRequest,
 			// MetricsLink:     *ptt.MetricsLink,
 			// LogsLink:        *ptt.LogsLink,
 			// DownloadLink:    *ptt.DownloadLink,
@@ -1344,7 +1307,7 @@ func DeletePtTask(ctx context.Context, c *gin.Context) error {
 		return err
 	}
 
-	var input ProvisionWf
+	var input helper.ProvisionWf
 	buf, err := json.Marshal(ptt.Input)
 	if err != nil {
 		l.Error(err, "unable to marshal transaction input", "projectId", projectId, "executionId", ptt.ExecutionId)
@@ -1391,9 +1354,9 @@ func UpdatePtTaskStatus(ctx context.Context, c *gin.Context) error {
 // UpdateWorkflowStatus updates the status of a workflow, call from Workflow with status name
 func UpdateWorkflowStatus(ctx context.Context, c *gin.Context) error {
 	l := log.FromContext(ctx).WithName("UpdateWorkflowStatus")
-	l.Info("UpdateWorkflowStatus")
 	correlationId := c.Param("correlationId")
 	projectId := os.Getenv("PROJECT_ID")
+	l.Info("Update the status of workflow", "correlationId", correlationId, "projectId", projectId, "status", api.WorkflowStatus_PROVISIONING_FINISHED.String())
 
 	// status, err := io.ReadAll(c.Request.Body)
 	// if err != nil {
@@ -1402,4 +1365,72 @@ func UpdateWorkflowStatus(ctx context.Context, c *gin.Context) error {
 	// }
 	_, err := helper.UpdateWorkflowStatus(ctx, projectId, "pt-transactions", correlationId, api.WorkflowStatus_PROVISIONING_FINISHED.String())
 	return err
+}
+
+func UploadScriptsFile(ctx context.Context, c *gin.Context) (string, error) {
+	l := log.FromContext(ctx).WithName("UploadScriptsFile")
+	l.Info("UploadScriptsFile with mixmium size 5MB")
+
+	crId := uuid.New().String()
+	file, err := c.FormFile("file")
+	if err != nil {
+		l.Error(err, "unable to get file from form")
+		return crId, err
+	}
+
+	l.Info("file info", "name", file.Filename, "size", file.Size)
+	uploadedFile, err := file.Open()
+	if err != nil {
+		l.Error(err, "unable to open file")
+		return crId, err
+	}
+	defer uploadedFile.Close()
+
+	bucket := os.Getenv("ARCHIEVE_BUCKET")
+	dstFile := fmt.Sprintf("upload-scripts/%s.tgz", crId)
+	// Using Cloud Storage API
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		l.Error(err, "unable to create GCS client")
+		return crId, err
+	}
+	defer client.Close()
+
+	wc := client.Bucket(bucket).Object(dstFile).NewWriter(ctx)
+	if _, err = io.Copy(wc, uploadedFile); err != nil {
+		l.Error(err, "unable to copy file to GCS", "dst", dstFile)
+		return crId, err
+	}
+	if err := wc.Close(); err != nil {
+		l.Error(err, "unable to close GCS writer", "dst", dstFile)
+		return crId, err
+	}
+
+	return crId, nil
+}
+
+func downloadFromGcs(ctx context.Context, bucket, srcFile string) ([]byte, error) {
+	l := log.FromContext(ctx).WithName("downloadFromGcs")
+	l.Info("downloadFromGcs", "bucket", bucket, "srcFile", srcFile)
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		l.Error(err, "unable to create GCS client")
+		return nil, err
+	}
+	defer client.Close()
+
+	rc, err := client.Bucket(bucket).Object(srcFile).NewReader(ctx)
+	if err != nil {
+		l.Error(err, "unable to create GCS reader", "src", srcFile)
+		return nil, err
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		l.Error(err, "unable to read GCS file", "src", srcFile)
+		return nil, err
+	}
+
+	return data, nil
 }

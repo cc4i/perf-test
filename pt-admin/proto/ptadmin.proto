@@ -106,26 +106,35 @@ message PtTaskRequestTraffic {
     int32 percent = 2;
 }
 
-// Scripts for the task
-message PtTaskRequestScript {
+// Request to upload scripts for the task
+message PtTaskScriptRequest {
     // Script name
     string name = 1;
 
     // Script type: file, zip, gz, tar, tgz, etc; "file is default, plain text file"
     ScriptType type = 2;
 
-    // Script content (base64) :: use string instead of bytes and then can be send as json
-    string data = 3;
+    // Script content
+    bytes data = 3;
+}
+
+// Response to upload scripts for the task
+message PtTaskScriptResponse {
+    // Task Id
+    string correlation_id = 1;
 }
 
 // Task for performance test
 message PtTaskRequest {
     // Total users to be stimulated in test
     int32 total_users = 1;
+
     // Duration for test
     int32 duration = 2;
+
     // Ramp up time for test
     int32 ramp_up = 3;
+
     // The url of target site
     string target_url = 4;
 
@@ -135,14 +144,15 @@ message PtTaskRequest {
     // Traffics arragement
     repeated PtTaskRequestTraffic traffics = 10;
 
-    // Scripts for the task
-    PtTaskRequestScript scripts = 20;
+    //Task id, which is used to identify the task
+    string correlation_id = 30;
 }
 
 // Launched Task for performance test with status and links
 message PtLaunchedTask {
     // Task id
     string correlation_id = 1;
+
     // Task
     PtTaskRequest task = 2;
 

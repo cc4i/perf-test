@@ -17,6 +17,8 @@ func Router(ctx context.Context) *gin.Engine {
 	r := gin.New()
 	// AllowAllOrigins
 	r.Use(cors.Default())
+	// Maxmum body size
+	r.MaxMultipartMemory = 8 << 20 // 8 MiB
 
 	defaultV1(ctx, r)
 
@@ -288,6 +290,18 @@ func defaultV1(ctx context.Context, r *gin.Engine) {
 		///////////////////////////////////////////////////////
 		// ProtoBuf
 		///////////////////////////////////////////////////////
+		// TODO: Upload a scripts file, which is a tgz file (tar.gz)
+		v1.POST("/pttask/scripts", func(c *gin.Context) {
+			l.Info("Upload a scripts file")
+			crId, err := UploadScriptsFile(ctx, c)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, []string{err.Error()})
+			} else {
+				c.JSON(http.StatusOK, map[string]string{
+					"correlationId": crId,
+				})
+			}
+		})
 		// Create a new task
 		v1.POST("/pttask", func(c *gin.Context) {
 			l.Info("Create a new PtTask")

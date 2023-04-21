@@ -221,6 +221,10 @@ resource "google_cloud_run_service" "pt_admin_service" {
           name  = "LOCATION"
           value = var.region
         }
+        env {
+          name  = "ARCHIEVE_BUCKET"
+          value = var.archieve_bucket
+        }
         startup_probe {
           http_get {
             path = "/healthz"
