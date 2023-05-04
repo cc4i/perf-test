@@ -34,6 +34,10 @@ func Router(ctx context.Context) *gin.Engine {
 func defaultV1(ctx context.Context, r *gin.Engine) {
 	l := log.FromContext(ctx).WithName("defaultV1")
 
+	// Serve static files
+	r.Static("/webui", "./dist")
+	r.Static("/assets", "./dist/assets")
+
 	v1 := r.Group("/v1")
 	{
 		///////////////////////////////////////////////////////

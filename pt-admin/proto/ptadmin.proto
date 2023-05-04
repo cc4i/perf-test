@@ -102,7 +102,7 @@ message PtTaskRequestTraffic {
     // Region for the traffic
     string region = 1;
 
-    //TODO: Percent for the traffic => Number of workers in this region
+    // Percent for the traffic => Number of workers in this region
     int32 percent = 2;
 }
 
@@ -140,6 +140,9 @@ message PtTaskRequest {
 
     // Task type for perforamnce test: Local, or Distribution
     PtTaskType type = 6;
+
+    // Customized Worker number for the task: if not set, use "total_users" to calculate worker number
+    int32 worker_number = 7;
 
     // Traffics arragement
     repeated PtTaskRequestTraffic traffics = 10;

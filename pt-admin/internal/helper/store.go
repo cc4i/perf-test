@@ -83,6 +83,7 @@ type GKE struct {
 	Certificate string `json:"certificate,omitempty"`
 	OperationId string `json:"operationId,omitempty"`
 	Status      string `json:"status,omitempty"`
+	Percent     int    `json:"pecent,omitempty"`
 }
 
 type TaskRequest struct {
@@ -92,8 +93,9 @@ type TaskRequest struct {
 	RampUp     int    `json:"rampUp"`
 	TargetUrl  string `json:"targetUrl"`
 	// locust;jmeter
-	Executor string `json:"executor"`
-	IsLocal  bool   `json:"isLocal"`
+	Executor     string `json:"executor"`
+	IsLocal      bool   `json:"isLocal"`
+	WorkerNumber int    `json:"workerNumber"`
 	// Distributed worker: {region: workerNum}
 	Worker4Task   map[string]int `json:"worker4Task,omitempty"`
 	Script4Task   string         `json:"script4Task"`
@@ -169,9 +171,9 @@ func ReadAll(ctx context.Context, projectId string, collection string) ([]PtTran
 }
 
 // Update dashboard url of the collection in Firestore
-func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl string) (*firestore.WriteResult, error) {
+func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl, logUrl string) (*firestore.WriteResult, error) {
 	l := log.FromContext(ctx).WithName("UpdateDashboardUrl")
-	l.Info("Update dashboard url", "collection", collection, "id", id, "url", dUrl)
+	l.Info("Update dashboard url", "collection", collection, "id", id, "dUrl", dUrl, "logUrl", logUrl)
 	client, err := firestore.NewClient(ctx, projectId)
 	if err != nil {
 		l.Error(err, "firestore new error")
@@ -190,6 +192,7 @@ func UpdateDashboardUrl(ctx context.Context, projectId, collection, id, dUrl str
 		return nil, err
 	}
 	orgin.MetricsLink = &dUrl
+	orgin.LogsLink = &logUrl
 	orgin.LastUpdated = timestamppb.Now()
 
 	// Update the value

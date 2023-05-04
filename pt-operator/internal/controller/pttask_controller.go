@@ -20,6 +20,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -279,7 +280,9 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 			if e.Scenario == scenario {
 				//provision workers in different clusters
 				if ts, ok := pTask.Spec.Traffics[scenario]; ok {
-					for i, t := range ts {
+					for _, t := range ts {
+						n := int(math.Floor((float64(e.Workers * int(t.Percent) / 100)) + 0.5))
+
 						l.Info("Provison worker in different region", "region", t.Region)
 						_, k2c, err := helper.Kube2Client(ctx, t.GKECA64, t.GKEEndpoint)
 						if err != nil {
@@ -287,18 +290,25 @@ func do4Locust(ctx context.Context, ptr *PtTaskReconciler, req ctrl.Request, pTa
 							updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
 							return phase, err
 						}
-						worker := helper.BuildLocusterWorker4Locust(req.Namespace, pTask.Spec.Images[scenario].WorkerImage, svcHost, svcPort, scenario, strconv.Itoa(i))
-						if _, err := k2c.CoreV1().Pods("default").Get(ctx, worker.Name, metav1.GetOptions{}); err != nil {
-							if _, err := k2c.CoreV1().Pods("default").Create(ctx, worker, metav1.CreateOptions{}); err != nil {
-								l.Error(err, "unable to create worker in GKE cluster", "region", t.Region, "endpoint", t.GKEEndpoint)
-								updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
-								return phase, err
-							}
-						}
+						for i := 1; i < n+1; i++ {
 
+							worker := helper.BuildLocusterWorker4Locust("default", pTask.Spec.Images[scenario].WorkerImage, svcHost, svcPort, scenario, strconv.Itoa(i))
+							if _, err := k2c.CoreV1().Pods("default").Get(ctx, worker.Name, metav1.GetOptions{}); err != nil {
+								l.Info("Provision workers in the different cluster")
+								l.Info("worker pod wasn't existed", "name", worker.Name, "namespace", "default")
+								l.Info("Create worker pod", "name", worker.Name, "namespace", "default")
+								if _, err := k2c.CoreV1().Pods("default").Create(ctx, worker, metav1.CreateOptions{}); err != nil {
+									l.Error(err, "unable to create worker in GKE cluster", "region", t.Region, "endpoint", t.GKEEndpoint)
+									updateStatus(ctx, ptr, scenario, req.NamespacedName, perftestv1.PT_STATUS_FAILED, "")
+									return phase, err
+								}
+							}
+
+							// Monitor the worker in the target clutser
+							go MonitorLocustDistributionWorker(scenario, strconv.Itoa(i), t.GKECA64, t.GKEEndpoint)
+
+						}
 						l.Info("The worker has been provisoned in target region", "region", t.Region, "endpoint", t.GKEEndpoint)
-						// Monitor the worker in the target clutser
-						go MonitorLocustDistributionWorker(scenario, strconv.Itoa(i), t.GKECA64, t.GKEEndpoint)
 					}
 				}
 			}

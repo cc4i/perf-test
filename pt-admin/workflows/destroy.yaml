@@ -13,7 +13,7 @@ main:
     - DestroyResource:
         call: http.post
         args:
-            url: $${input.url + "/v1/destroy/" + input.projectId + "/" + input.correlationId}
+            url: $${input.url + "/v1/workflow/destroy/" + input.projectId + "/" + input.correlationId}
             auth:
                 type: OIDC
             body: $${input}

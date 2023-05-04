@@ -31,6 +31,7 @@ FROM gcr.io/distroless/static-debian11:debug
 WORKDIR /
 COPY --from=builder /workspace/pt-admin .
 COPY ./manifests /manifests
+COPY ./dist /dist
 # USER 65532:65532
 
 ENTRYPOINT ["/pt-admin"]

@@ -1,5 +1,7 @@
 {
+  "dashboardFilters": [],
   "displayName": "Performance Testing - ${PT_TASK_NAME}",
+  "labels": {},
   "mosaicLayout": {
     "columns": 12,
     "tiles": [
@@ -8,13 +10,16 @@
         "widget": {
           "scorecard": {
             "gaugeView": {
-              "upperBound": 50.0
+              "lowerBound": 0,
+              "upperBound": 50
             },
+            "thresholds": [],
             "timeSeriesQuery": {
               "timeSeriesFilter": {
                 "aggregation": {
                   "alignmentPeriod": "60s",
                   "crossSeriesReducer": "REDUCE_MAX",
+                  "groupByFields": [],
                   "perSeriesAligner": "ALIGN_MAX"
                 },
                 "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_workers/gauge\" resource.type=\"prometheus_target\""
@@ -36,26 +41,17 @@
             },
             "dataSets": [
               {
-                "minAlignmentPeriod": "60s",
                 "plotType": "LINE",
                 "targetAxis": "Y1",
                 "timeSeriesQuery": {
-                  "timeSeriesFilter": {
-                    "aggregation": {
-                      "alignmentPeriod": "60s",
-                      "perSeriesAligner": "ALIGN_MEAN"
-                    },
-                    "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_avg_response_time/gauge\" resource.type=\"prometheus_target\"",
-                    "secondaryAggregation": {
-                      "alignmentPeriod": "60s"
-                    }
-                  }
+                  "timeSeriesQueryLanguage": "fetch prometheus_target\n| metric\n    'prometheus.googleapis.com/gtools_perftest_pttask_avg_response_time/gauge'\n| filter (metric.worker =~ 'locust-worker-.*scenario-1680486164524333340.*')\n| group_by 1m,\n    [value_gtools_perftest_pttask_avg_response_time_mean:\n       mean(value.gtools_perftest_pttask_avg_response_time)]\n| every 1m\n| group_by [metric.endpoint],\n    [value_gtools_perftest_pttask_avg_response_time_mean_mean:\n       mean(value_gtools_perftest_pttask_avg_response_time_mean)]"
                 }
               }
             ],
+            "thresholds": [],
             "timeshiftDuration": "0s",
             "yAxis": {
-              "label": "y1Axis",
+              "label": "",
               "scale": "LINEAR"
             }
           }
@@ -68,13 +64,16 @@
         "widget": {
           "scorecard": {
             "gaugeView": {
-              "upperBound": 1000.0
+              "lowerBound": 0,
+              "upperBound": 1000
             },
+            "thresholds": [],
             "timeSeriesQuery": {
               "timeSeriesFilter": {
                 "aggregation": {
                   "alignmentPeriod": "60s",
                   "crossSeriesReducer": "REDUCE_MAX",
+                  "groupByFields": [],
                   "perSeriesAligner": "ALIGN_MAX"
                 },
                 "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_request_per_sec/gauge\" resource.type=\"prometheus_target\""
@@ -108,12 +107,14 @@
                     },
                     "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_users/gauge\" resource.type=\"prometheus_target\"",
                     "secondaryAggregation": {
-                      "alignmentPeriod": "60s"
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_NONE"
                     }
                   }
                 }
               }
             ],
+            "thresholds": [],
             "timeshiftDuration": "0s",
             "yAxis": {
               "label": "y1Axis",
@@ -140,6 +141,7 @@
                 }
               }
             ],
+            "thresholds": [],
             "timeshiftDuration": "0s",
             "yAxis": {
               "label": "y1Axis",
@@ -157,11 +159,13 @@
             "sparkChartView": {
               "sparkChartType": "SPARK_LINE"
             },
+            "thresholds": [],
             "timeSeriesQuery": {
               "timeSeriesFilter": {
                 "aggregation": {
                   "alignmentPeriod": "60s",
                   "crossSeriesReducer": "REDUCE_MAX",
+                  "groupByFields": [],
                   "perSeriesAligner": "ALIGN_MAX"
                 },
                 "filter": "metric.type=\"prometheus.googleapis.com/gtools_perftest_pttask_total_masters/gauge\" resource.type=\"prometheus_target\""

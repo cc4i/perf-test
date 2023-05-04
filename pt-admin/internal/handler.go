@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -536,9 +537,10 @@ func CreateDashboard(ctx context.Context, c *gin.Context) (string, error) {
 	}
 	// Dashboard URL
 	dUrl := "https://console.cloud.google.com/monitoring/dashboards/builder/" + dId + "?project=" + projectId
+	logUrl := "https://console.cloud.google.com/logs/query;query=resource.type%3D%22k8s_cluster%22%0Aresource.labels.cluster_name%3D%22pt-cluster-9uej2d%22?project=" + projectId
 
 	// Save dashboard URL to Firestore
-	_, err = helper.UpdateDashboardUrl(ctx, projectId, "pt-transactions", correlationId, dUrl)
+	_, err = helper.UpdateDashboardUrl(ctx, projectId, "pt-transactions", correlationId, dUrl, logUrl)
 	if err != nil {
 		l.Error(err, "failed to update dashboardUrl to Firestore")
 	}
@@ -567,6 +569,10 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 	scenario := "scenario-" + executionId
 	taurusImage := fmt.Sprintf("asia-docker.pkg.dev/%s/%s-pt-images/taurus-base", tr.ProjectId, tr.ProjectId)
 	locustImage := fmt.Sprintf("asia-docker.pkg.dev/%s/%s-pt-images/locust-worker", tr.ProjectId, tr.ProjectId)
+	workers := int(tr.NumOfUsers/1000) + 1
+	if tr.WorkerNumber > 0 {
+		workers = tr.WorkerNumber
+	}
 
 	// gzPath, _ := save2gcs(ctx, tr.ProjectId, tr.Script4Task)
 	if tr.Executor == "locust" {
@@ -584,7 +590,7 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 				},
 			},
 			Spec: api.PtTaskSpec{
-				Type: "Local",
+				// Type: "Local",
 				Execution: []api.PtTaskExecution{
 					{
 						Executor:    tr.Executor,
@@ -593,7 +599,7 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 						RampUp:      strconv.Itoa(tr.RampUp) + "s",
 						Scenario:    scenario,
 						Master:      true,
-						Workers:     int(tr.NumOfUsers/1000) + 1,
+						Workers:     workers,
 					},
 				},
 				Scenarios: map[string]api.PtTaskScenario{
@@ -616,8 +622,10 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 		}
 		if tr.IsLocal {
 			l.Info("Locust PtTask is local...")
+			pt.Spec.Type = "Local"
 		} else {
 			l.Info("Locust PtTask is distributed...")
+			pt.Spec.Type = "Distribution"
 			for _, gke := range pwf.GKEs {
 				if gke.IsMater == "false" {
 					ti := &helper.TInfra{}
@@ -638,8 +646,7 @@ func PreparenApplyPtTask(ctx context.Context, c *gin.Context) (*api.PtTask, erro
 								GKECA64:     ca,
 								GKEEndpoint: ip,
 								Region:      gke.Location,
-								//TODO: Percent of traffic to this cluster, currently 100% due Locust limitation
-								Percent: 100,
+								Percent:     gke.Percent,
 							},
 						},
 					}
@@ -1147,26 +1154,24 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 			Duration:      int(ptr.Duration),
 			RampUp:        int(ptr.RampUp),
 			TargetUrl:     ptr.TargetUrl,
+			WorkerNumber:  int(ptr.WorkerNumber),
 			IsLocal:       api.PtTaskType(ptr.Type.Number()) == api.PtTaskType_LOCAL,
 			Script4Task:   fmt.Sprintf("gs://%s/upload-scripts/%s.tgz", bucket, crId),
 		},
 	}
 
-	//workers := int(ptr.TotalUsers/1000) + 1
-
 	// Adding GKEs per distributed traffics
 	for _, t := range ptr.Traffics {
-		for i := 0; i < int(t.Percent); i++ {
-			pwf.GKEs = append(pwf.GKEs, helper.GKE{
-				AccountId:  "pt-service-account",
-				ProjectId:  projectId,
-				Cluster:    "pt-cluster-9uej2d", // + randString()
-				IsMater:    "false",
-				Location:   t.Region,
-				Network:    network,
-				Subnetwork: network,
-			})
-		}
+		pwf.GKEs = append(pwf.GKEs, helper.GKE{
+			AccountId:  "pt-service-account",
+			ProjectId:  projectId,
+			Cluster:    "pt-cluster-9uej2d", // + randString()
+			IsMater:    "false",
+			Location:   t.Region,
+			Network:    network,
+			Subnetwork: network,
+			Percent:    int(t.Percent),
+		})
 	}
 	//
 
@@ -1208,6 +1213,10 @@ func CreatePtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, err
 	return launchedTask, nil
 }
 
+func round(x float64) int {
+	return int(math.Floor(x + 0.5))
+}
+
 // Generate a random string of a-z chars with len = 6
 func randString() string {
 	rand.Seed(time.Now().UnixNano())
@@ -1238,6 +1247,7 @@ func GetPtTask(ctx context.Context, c *gin.Context) (*api.PtLaunchedTask, error)
 		Created:         ptt.Created,
 		Finished:        ptt.Finished,
 		LastUpdated:     ptt.LastUpdated,
+		Task:            ptt.OriginTaskRequest,
 		// MetricsLink:     *ptt.MetricsLink,
 		// LogsLink:        *ptt.LogsLink,
 		// DownloadLink:    *ptt.DownloadLink,
@@ -1301,20 +1311,27 @@ func DeletePtTask(ctx context.Context, c *gin.Context) error {
 	l.Info("Delete a PtTask by correlationId", "correlationId", correlationId)
 	// ti := &helper.TInfra{}
 	projectId := os.Getenv("PROJECT_ID")
+	runService := os.Getenv("K_SERVICE")
+	location := os.Getenv("LOCATION")
 	ptt, err := helper.Read(ctx, projectId, "pt-transactions", correlationId)
 	if err != nil {
 		l.Error(err, "unable to read pt-transactions from firestore")
 		return err
 	}
 
-	var input helper.ProvisionWf
-	buf, err := json.Marshal(ptt.Input)
+	// Reretive the url of cloudrun
+	cloudrun, err := run.NewServicesClient(ctx)
 	if err != nil {
-		l.Error(err, "unable to marshal transaction input", "projectId", projectId, "executionId", ptt.ExecutionId)
+		l.Error(err, "unable to create cloudrun client")
+		return err
 	}
-	err = json.Unmarshal(buf, &input)
+	req := &runpb.GetServiceRequest{
+		Name: fmt.Sprintf("projects/%s/locations/%s/services/%s", projectId, location, runService),
+	}
+	resp, err := cloudrun.GetService(ctx, req)
 	if err != nil {
-		l.Error(err, "unable to unmarshal transaction input", "projectId", projectId, "executionId", ptt.ExecutionId)
+		l.Error(err, "unable to get cloudrun service")
+		return err
 	}
 
 	topic := "pt-destroy-wf"
@@ -1324,11 +1341,18 @@ func DeletePtTask(ctx context.Context, c *gin.Context) error {
 		return err
 	}
 	ret := client.Topic(topic).Publish(ctx, &pubsub.Message{
-		Data: []byte("{\"executionId\": \"" + ptt.ExecutionId + "\", \"correlationId\": \"" + ptt.CorrelationId + "\", \"projectId\": " + projectId + "}"),
+		Data: []byte("{\"url\": \"" + resp.Uri + "\", \"executionId\": \"" + ptt.ExecutionId + "\", \"correlationId\": \"" + ptt.CorrelationId + "\", \"projectId\": " + projectId + "}"),
 	})
 	_, err = ret.Get(ctx)
 	if err != nil {
 		l.Error(err, "unable to publish message to pubsub")
+		return err
+	}
+
+	// Update status to CANCELLED in Firestore
+	_, err = helper.UpdatePtTaskStatus(ctx, projectId, "pt-transactions", correlationId, api.PtLaunchedTaskStatus_CANCELLED.String())
+	if err != nil {
+		l.Error(err, "unable to update pttask status")
 		return err
 	}
 
