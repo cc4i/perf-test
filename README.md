@@ -19,7 +19,9 @@ The performance testing process is to evaluate the performance of the system und
 
 - pt-operator: *Operator to schedule performance testing in GKE cluster, aggregate metrics and logs into Cloud Operation Suite.*
 
-- pt-webui: *Web UI to manage and visualize performance testing.*
+- ui: *Web UI to manage and visualize performance testing.*
+
+- tf: *Terraform scripts to provision all resources.*
 
 
 
@@ -35,25 +37,31 @@ Google Cloud SDK >= 423.0.0 with credentials
 
 ## Setup
 ```shell
+# 0. Set environment variables
+# Change to your project id
+export PROJECT_ID=$(gcloud config get-value project)
+# Change to your region
+export REGION=asia-southeast1
+
 # 1. Build pt-admin image and push to GAR
-export PT_ADMIN_IMAGE=asia-docker.pkg.dev/play-api-service/test-images/pt-admin:latest
+export PT_ADMIN_IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/performance-testing/pt-admin:latest
 cd pt-admin
 make docker-buildx IMG=${PT_ADMIN_IMAGE}
 
 # 2. Build pt-operator image and push to GAR
-export PT_OPERATOR_IMAGE=asia-docker.pkg.dev/play-api-service/test-images/pt-operator:latest
+export PT_OPERATOR_IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/performance-testing/pt-operator:latest
 cd pt-operator
 make docker-buildx IMG=${PT_OPERATOR_IMAGE}
 
 # 3. Provision all resources
 cd tf
 terraform init
+# Input your project id, region and pt-admin image
 terraform apply
 ```
 
 
 ## References
-- [Performance testing](https://docs.google.com/document/d/1UoNNrXy2nvdMIAY9haq5qBTua1ly0ZJjTErGvnMp5Js/edit)
 - [Taurus Configuration Syntax](https://gettaurus.org/docs/ConfigSyntax/)
 
 

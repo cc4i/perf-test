@@ -19,13 +19,11 @@
 variable "project_id" {
   type        = string
   description = "The project ID to host Performance Testing in (required)"
-  default = "play-dev-ops"
 }
 
 variable "region" {
   type        = string
   description = "The region to host Performance Testing in "
-  default     = "asia-southeast1"
 }
 
 variable "service_account" {
@@ -53,5 +51,4 @@ variable "firestore_collection" {
 variable "pt_admin_image" {
   type        = string
   description = "The image to deploy to Cloud Run"
-  default     = "asia-docker.pkg.dev/play-api-service/test-images/pt-admin"
 }
